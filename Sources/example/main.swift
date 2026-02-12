@@ -11,7 +11,7 @@ func runBenchmark(srcURL: URL) {
         fatalError("Failed to read src.png")
     }
 
-    // Convert to YCbCrImage (using veif's pngToYCbCr, which now supports generic image format via CGImageSource)
+    // Convert to YCbCrImage
     guard let ycbcr = try? pngToYCbCr(data: data) else {
         fatalError("Failed to decode src.png")
     }
@@ -42,8 +42,6 @@ func runJPEGComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage, refSmal
     let dstData = NSMutableData()
     guard let destination = CGImageDestinationCreateWithData(dstData as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else { return }
 
-    // kCGImageDestinationLossyCompressionQuality is defined in ImageIO. But might need specific import or usage.
-    // It is a CFString key.
     let options = [kCGImageDestinationLossyCompressionQuality: (Double(q) / 100.0)] as CFDictionary
     CGImageDestinationAddImage(destination, cgImage, options)
     CGImageDestinationFinalize(destination)

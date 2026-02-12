@@ -355,7 +355,7 @@ public func pngToYCbCr(data: Data) throws -> YCbCrImage {
         throw NSError(domain: "ImageError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get pixel data"])
     }
     
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     let bytesPerPixel = 4
     let bytesPerRow = (bytesPerPixel * width)
     var rawData = [UInt8](repeating: 0, count: (height * bytesPerRow))
@@ -377,21 +377,21 @@ public func pngToYCbCr(data: Data) throws -> YCbCrImage {
     for y in 0..<height {
         for x in 0..<width {
             let offset = ((y * bytesPerRow) + (x * bytesPerPixel))
-            let r = Float(rawData[offset + 0])
-            let g = Float(rawData[offset + 1])
-            let b = Float(rawData[offset + 2])
+            let r1 = Int32(rawData[offset + 0])
+            let g1 = Int32(rawData[offset + 1])
+            let b1 = Int32(rawData[offset + 2])
             
-            let yVal = ((0.29900 * r) + (0.58700 * g) + (0.11400 * b))
-            let cbVal = (((-1.0 * 0.16874) * r) - (0.33126 * g) + (0.50000 * b) + 128.0)
-            let crVal = ((0.50000 * r) - (0.41869 * g) - (0.08131 * b) + 128.0)
+            let yVal = (19595 * r1 + 38470 * g1 + 7471 * b1 + (1 << 15)) >> 16
+            let cbVal = ((-11059 * r1 - 21709 * g1 + 32768 * b1 + (1 << 15)) >> 16) + 128
+            let crVal = ((32768 * r1 - 27439 * g1 - 5329 * b1 + (1 << 15)) >> 16) + 128
             
             let yIdx = ycbcr.yOffset(x, y)
-            ycbcr.yPlane[yIdx] = UInt8(clamping: Int(yVal))
+            ycbcr.yPlane[yIdx] = UInt8(clamping: yVal)
             
             let cOff = ycbcr.cOffset((x / 2), (y / 2))
              if cOff < ycbcr.cbPlane.count {
-                ycbcr.cbPlane[cOff] = UInt8(clamping: Int(cbVal))
-                ycbcr.crPlane[cOff] = UInt8(clamping: Int(crVal))
+                ycbcr.cbPlane[cOff] = UInt8(clamping: cbVal)
+                ycbcr.crPlane[cOff] = UInt8(clamping: crVal)
             }
         }
     }
@@ -424,7 +424,7 @@ public func saveImage(img: YCbCrImage, url: URL) throws {
         }
     }
     
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     guard let context = CGContext(
         data: &rawData,
         width: width,
