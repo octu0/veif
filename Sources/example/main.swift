@@ -113,8 +113,16 @@ func yCbCrToCGImage(img: YCbCrImage) -> CGImage? {
     for y in 0..<height {
         for x in 0..<width {
             let yVal = Float(img.yPlane[img.yOffset(x, y)])
-            let cbVal = Float(img.cbPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
-            let crVal = Float(img.crPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
+            
+            var cPx = x
+            var cPy = y
+            if img.ratio == .ratio420 {
+                cPx = (x / 2)
+                cPy = (y / 2)
+            }
+            let cOff = img.cOffset(cPx, cPy)
+            let cbVal = Float(img.cbPlane[cOff]) - 128.0
+            let crVal = Float(img.crPlane[cOff]) - 128.0
 
             let r = Int((yVal + (1.40200 * crVal)))
             let g = Int((yVal - (0.34414 * cbVal) - (0.71414 * crVal)))
@@ -147,7 +155,7 @@ func yCbCrToCGImage(img: YCbCrImage) -> CGImage? {
 // MARK: - Main Entry Point
 
 let args = CommandLine.arguments
-var bitrate = 100
+var bitrate = 200
 var benchmarkMode = false
 var positionalArgs: [String] = []
 
@@ -196,7 +204,7 @@ guard let ycbcr = try? pngToYCbCr(data: data) else {
     exit(1)
 }
 
-let srcbit = (ycbcr.width * ycbcr.height * 8)
+let srcbit = ((ycbcr.yPlane.count + ycbcr.cbPlane.count + ycbcr.crPlane.count) * 8)
 let maxbit = (bitrate * 1000)
 print("src \(srcbit) bit")
 print(String(format: "target %d bit = %3.2f%%", maxbit, ((Double(maxbit) / Double(srcbit)) * 100)))
@@ -265,3 +273,4 @@ print("| Layer2 | 1 | \(fmtSize(s2)) |")
 
 let srcFileSize = (try? Data(contentsOf: srcURL).count) ?? 0
 print("| original | 1 | \(fmtSize(srcFileSize)) |")
+

@@ -28,7 +28,13 @@ func extractPlanes(_ img: YCbCrImage) -> ([[Double]], [[Double]], [[Double]]) {
         for x in 0..<w {
             yPlane[y][x] = Double(img.yPlane[img.yOffset(x, y)])
             
-            let cOff = img.cOffset((x / 2), (y / 2))
+            var cPx = x
+            var cPy = y
+            if img.ratio == .ratio420 {
+                cPx = (x / 2)
+                cPy = (y / 2)
+            }
+            let cOff = img.cOffset(cPx, cPy)
             cbPlane[y][x] = Double(img.cbPlane[cOff])
             crPlane[y][x] = Double(img.crPlane[cOff])
         }
@@ -47,12 +53,26 @@ public func calcPSNR(img1: YCbCrImage, img2: YCbCrImage) -> (Double, Double, Dou
     for y in 0..<h {
         for x in 0..<w {
             let y1 = Double(img1.yPlane[img1.yOffset(x, y)])
-            let cOff1 = img1.cOffset((x / 2), (y / 2))
+            
+            var cPx1 = x
+            var cPy1 = y
+            if img1.ratio == .ratio420 {
+                cPx1 = (x / 2)
+                cPy1 = (y / 2)
+            }
+            let cOff1 = img1.cOffset(cPx1, cPy1)
             let cb1 = Double(img1.cbPlane[cOff1])
             let cr1 = Double(img1.crPlane[cOff1])
             
             let y2 = Double(img2.yPlane[img2.yOffset(x, y)])
-            let cOff2 = img2.cOffset((x / 2), (y / 2))
+            
+            var cPx2 = x
+            var cPy2 = y
+            if img2.ratio == .ratio420 {
+                cPx2 = (x / 2)
+                cPy2 = (y / 2)
+            }
+            let cOff2 = img2.cOffset(cPx2, cPy2)
             let cb2 = Double(img2.cbPlane[cOff2])
             let cr2 = Double(img2.crPlane[cOff2])
             
@@ -280,6 +300,7 @@ public func resizeHalfNN(_ src: YCbCrImage) -> YCbCrImage {
     let dstW = (w / 2)
     let dstH = (h / 2)
     
+    // Default 4:2:0 for destination
     var dst = YCbCrImage(width: dstW, height: dstH)
     
     // Resize Y
@@ -297,7 +318,43 @@ public func resizeHalfNN(_ src: YCbCrImage) -> YCbCrImage {
     for y in 0..<dstCH {
         for x in 0..<dstCW {
             let dOff = dst.cOffset(x, y)
-            let sOff = src.cOffset((x * 2), (y * 2))
+            
+            var sPx = (x * 2)
+            var sPy = (y * 2)
+            if src.ratio == .ratio444 {
+                // If 4:4:4, we are downsampling by 2 spatially.
+                // But dst chroma pixel 'x' corresponds to dst spatial '2x'.
+                // Corresponds to src spatial '4x'.
+                sPx = (x * 4)
+                sPy = (y * 4)
+            } else {
+                // If 4:2:0, we use (x*2), (y*2) which corresponds to src spatial (4x) in 4:2:0 plane space?
+                // Wait, if src 4:2:0.
+                // dst chroma x=0 -> src chroma 0. (spatial 0)
+                // dst chroma x=1 -> src chroma 2. (spatial 4)
+                // correct.
+            }
+            // If src.ratio is 4:4:4, sPx is full-res coord.
+            // If src.ratio is 4:2:0, sPx is plane coord (so x*2 is correct).
+            
+            // Wait, if src is 4:4:4, sPx needs to point to correct pixel in 4:4:4 buffer.
+            // which is spatial 4x.
+            // So sPx = 4*x.
+            // src.cOffset(sPx, sPy).
+            
+            // If src is 4:2:0. sPx needs to point to correct pixel in 4:2:0 buffer.
+            // which is plane coord 2x.
+            // So sPx = 2*x.
+            // src.cOffset(sPx, sPy).
+            // But src.cOffset for 4:2:0 expects plane coord.
+            
+            // Wait, my cOffset logic in YCbCrImage:
+            // .ratio420: offset = y*cStride + x. (Direct plane access).
+            
+            // So for 4:2:0, passing plane coordinate 2x is correct.
+            // For 4:4:4, passing plane coordinate (which is spatial coordinate) 4x is correct.
+            
+            let sOff = src.cOffset(sPx, sPy)
              if sOff < src.cbPlane.count {
                 dst.cbPlane[dOff] = src.cbPlane[sOff]
                 dst.crPlane[dOff] = src.crPlane[sOff]

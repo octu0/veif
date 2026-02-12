@@ -54,22 +54,43 @@ func clampU8(_ v: Int16) -> UInt8 {
 
 // MARK: - Image Structures
 
+public enum YCbCrRatio {
+    case ratio420
+    case ratio444
+}
+
 public struct YCbCrImage {
     public var yPlane: [UInt8]
     public var cbPlane: [UInt8]
     public var crPlane: [UInt8]
     public let width: Int
     public let height: Int
+    public let ratio: YCbCrRatio
     
     public var yStride: Int { width }
-    public var cStride: Int { (width / 2) }
+    public var cStride: Int {
+        switch ratio {
+        case .ratio420: return (width / 2)
+        case .ratio444: return width
+        }
+    }
     
-    public init(width: Int, height: Int) {
+    public init(width: Int, height: Int, ratio: YCbCrRatio = .ratio420) {
         self.width = width
         self.height = height
+        self.ratio = ratio
         self.yPlane = [UInt8](repeating: 0, count: (width * height))
-        self.cbPlane = [UInt8](repeating: 0, count: ((width / 2) * (height / 2)))
-        self.crPlane = [UInt8](repeating: 0, count: ((width / 2) * (height / 2)))
+        
+        switch ratio {
+        case .ratio420:
+            let cSize = ((width / 2) * (height / 2))
+            self.cbPlane = [UInt8](repeating: 0, count: cSize)
+            self.crPlane = [UInt8](repeating: 0, count: cSize)
+        case .ratio444:
+            let cSize = (width * height)
+             self.cbPlane = [UInt8](repeating: 0, count: cSize)
+             self.crPlane = [UInt8](repeating: 0, count: cSize)
+        }
     }
     
     public func yOffset(_ x: Int, _ y: Int) -> Int {
@@ -106,9 +127,16 @@ public struct ImageReader {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
-            // Downsample for chroma lookup
-            let cPx = (rPx / 2)
-            let cPy = (rPy / 2)
+            
+            var cPx = rPx
+            var cPy = rPy
+            if img.ratio == .ratio420 {
+                // Downsample for chroma lookup if 4:2:0
+                cPx = (rPx / 2)
+                cPy = (rPy / 2)
+            }
+            // If 4:4:4, we use full res coordinates (rPx, rPy) directly equivalent to cPx,cPy in 4:4:4 buffer
+            
             let offset = img.cOffset(cPx, cPy)
             plane[i] = (Int16(img.cbPlane[offset]) - prediction)
         }
@@ -119,8 +147,14 @@ public struct ImageReader {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
-            let cPx = (rPx / 2)
-            let cPy = (rPy / 2)
+            
+            var cPx = rPx
+            var cPy = rPy
+            if img.ratio == .ratio420 {
+                cPx = (rPx / 2)
+                cPy = (rPy / 2)
+            }
+            
             let offset = img.cOffset(cPx, cPy)
             plane[i] = (Int16(img.crPlane[offset]) - prediction)
         }
@@ -134,7 +168,7 @@ public class ImagePredictor {
     public let height: Int
     
     public init(width: Int, height: Int) {
-        self.img = YCbCrImage(width: width, height: height)
+        self.img = YCbCrImage(width: width, height: height, ratio: .ratio420)
         self.width = width
         self.height = height
     }
@@ -347,7 +381,8 @@ public func pngToYCbCr(data: Data) throws -> YCbCrImage {
     
     let width = cgImage.width
     let height = cgImage.height
-    var ycbcr = YCbCrImage(width: width, height: height)
+    // Use 4:4:4 to match Go implementation
+    var ycbcr = YCbCrImage(width: width, height: height, ratio: .ratio444)
     
     guard let dataProvider = cgImage.dataProvider,
           let pixelData = dataProvider.data,
@@ -388,7 +423,7 @@ public func pngToYCbCr(data: Data) throws -> YCbCrImage {
             let yIdx = ycbcr.yOffset(x, y)
             ycbcr.yPlane[yIdx] = UInt8(clamping: yVal)
             
-            let cOff = ycbcr.cOffset((x / 2), (y / 2))
+            let cOff = ycbcr.cOffset(x, y) // Full resolution for 4:4:4
              if cOff < ycbcr.cbPlane.count {
                 ycbcr.cbPlane[cOff] = UInt8(clamping: cbVal)
                 ycbcr.crPlane[cOff] = UInt8(clamping: crVal)
@@ -409,8 +444,17 @@ public func saveImage(img: YCbCrImage, url: URL) throws {
     for y in 0..<height {
         for x in 0..<width {
             let yVal = Float(img.yPlane[img.yOffset(x, y)])
-            let cbVal = Float(img.cbPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
-            let crVal = Float(img.crPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
+            
+            var cPx = x
+            var cPy = y
+            if img.ratio == .ratio420 {
+                cPx = (x / 2)
+                cPy = (y / 2)
+            }
+            
+            let cOff = img.cOffset(cPx, cPy)
+            let cbVal = Float(img.cbPlane[cOff]) - 128.0
+            let crVal = Float(img.crPlane[cOff]) - 128.0
             
             let r = Int((yVal + (1.40200 * crVal)))
             let g = Int((yVal - (0.34414 * cbVal) - (0.71414 * crVal)))

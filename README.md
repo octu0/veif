@@ -35,9 +35,9 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 | Layer | Resolution | Size | Image |
 | :--- | :--- | :--- | :--- |
-| Layer0 | 1/4 | 2.35KB | ![Layer0](docs/out_layer0.png) |
-| Layer1 | 1/2 | 6.33KB | ![Layer1](docs/out_layer1.png) |
-| Layer2 | 1 | 17.62KB | ![Layer2](docs/out_layer2.png) |
+| Layer0 | 1/4 | 4.66KB | ![Layer0](docs/out_layer0.png) |
+| Layer1 | 1/2 | 12.81KB | ![Layer1](docs/out_layer1.png) |
+| Layer2 | 1 | 34.01KB | ![Layer2](docs/out_layer2.png) |
 | original | 1 | 213.68KB | ![original](docs/src.png) |
 
 ## Internals
