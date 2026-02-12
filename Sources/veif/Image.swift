@@ -275,34 +275,34 @@ public struct Image16 {
         self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
     }
     
-    public func getY(x: Int, y: Int, size: Int) -> [[Int16]] {
+    public func getY(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
         var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
-                plane[h][w] = self.y[py][px]
+                plane[h][w] = self.y[py][px] - prediction
             }
         }
         return plane
     }
     
-    public func getCb(x: Int, y: Int, size: Int) -> [[Int16]] {
+    public func getCb(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
         var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                plane[h][w] = self.cb[py][px]
+                plane[h][w] = self.cb[py][px] - prediction
             }
         }
         return plane
     }
     
-    public func getCr(x: Int, y: Int, size: Int) -> [[Int16]] {
+    public func getCr(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
         var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                plane[h][w] = self.cr[py][px]
+                plane[h][w] = self.cr[py][px] - prediction
             }
         }
         return plane
@@ -381,7 +381,7 @@ public func pngToYCbCr(data: Data) throws -> YCbCrImage {
     
     let width = cgImage.width
     let height = cgImage.height
-    // Use 4:4:4 to match Go implementation
+    // Use 4:4:4
     var ycbcr = YCbCrImage(width: width, height: height, ratio: .ratio444)
     
     guard let dataProvider = cgImage.dataProvider,

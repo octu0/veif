@@ -58,7 +58,7 @@ public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int
 
 func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc, getLL: GetLLFunc) throws -> ([[Int16]], Int16) {
     let prediction = predict(w, h, size)
-    let ll = getLL(w, h, size, prediction)
+    let ll = getLL(w/2, h/2, size/2, prediction)
     let planes = try invertLayer(br: br, ll: ll, size: size)
     
     for i in 0..<size {
@@ -126,15 +126,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = yBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictY, setRow: tmp.updateY, getLL: { x, y, sz, prediction in
-                var plane = prev.getY(x: (x / 2), y: (y / 2), size: (sz / 2))
-                for i in 0..<plane.count {
-                    for j in 0..<plane[i].count {
-                        plane[i][j] -= prediction
-                    }
-                }
-                return plane
-            })
+            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictY, setRow: tmp.updateY, getLL: prev.getY)
             sub.updateY(data: ll, prediction: prediction, startX: w, startY: h, size: size)
         }
     }
@@ -146,15 +138,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb, getLL: { x, y, sz, prediction in
-                var plane = prev.getCb(x: (x / 2), y: (y / 2), size: (sz / 2))
-                for i in 0..<plane.count {
-                     for j in 0..<plane[i].count {
-                        plane[i][j] -= prediction
-                    }
-                }
-                return plane
-            })
+            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb, getLL: prev.getCb)
             sub.updateCb(data: ll, prediction: prediction, startX: w, startY: h, size: size)
         }
     }
@@ -166,15 +150,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = crBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCr, setRow: tmp.updateCr, getLL: { x, y, sz, prediction in
-                var plane = prev.getCr(x: (x / 2), y: (y / 2), size: (sz / 2))
-                for i in 0..<plane.count {
-                     for j in 0..<plane[i].count {
-                        plane[i][j] -= prediction
-                    }
-                }
-                return plane
-            })
+            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCr, setRow: tmp.updateCr, getLL: prev.getCr)
             sub.updateCr(data: ll, prediction: prediction, startX: w, startY: h, size: size)
         }
     }

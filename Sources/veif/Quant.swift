@@ -27,7 +27,6 @@ private func quantize(_ data: inout [[Int16]], size: Int, scale: Int) {
     }
 }
 
-
 // MARK: - Dequantization
 
 public func dequantizeLow(_ block: inout [[Int16]], size: Int, scale: Int) {
