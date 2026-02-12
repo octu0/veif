@@ -1,48 +1,88 @@
 import Foundation
 
-class RateController {
-    let maxbit: Int
-    let totalProcessPixels: Int
-    var currentBits: Int
-    var processedPixels: Int
-    var baseShift: Int
+public class RateController {
+    public let maxbit: Int
+    public let totalProcessPixels: Int
+    public var currentBits: Int
+    public var processedPixels: Int
+    public var baseShift: Int
     
-    init(maxbit: Int, width: Int, height: Int) {
+    public init(maxbit: Int, totalProcessPixels: Int, baseShift: Int = 2) {
         self.maxbit = maxbit
-        let totalPixels = width * height
-        self.totalProcessPixels = totalPixels + (totalPixels / 2)
+        self.totalProcessPixels = totalProcessPixels
         self.currentBits = 0
         self.processedPixels = 0
-        self.baseShift = 0
+        self.baseShift = baseShift
     }
     
-    func calcScale(addedBits: Int, addedPixels: Int) -> Int {
-        self.currentBits += addedBits
-        self.processedPixels += addedPixels
+    public func calcScale(addedBits: Int, addedPixels: Int) -> Int {
+        currentBits += addedBits
+        processedPixels += addedPixels
         
-        // Target bits progress
-        let targetBitsProgress = Int(Double(self.maxbit) * (Double(self.processedPixels) / Double(self.totalProcessPixels)))
+        let targetBitsProgress = (Double(maxbit) * (Double(processedPixels) / Double(totalProcessPixels)))
         
-        let diff = self.currentBits - targetBitsProgress
-        let threshold = self.maxbit / 10
-        
-        if threshold < diff {
-            self.baseShift += 1
-            self.currentBits -= threshold / 2
-        } else if diff < -1 * threshold {
-            if 0 < self.baseShift {
-                self.baseShift -= 1
-                self.currentBits += threshold / 2
+        if 0 < targetBitsProgress {
+            let overshoot = (Double(currentBits) / targetBitsProgress)
+            if 2.0 < overshoot {
+                baseShift += 2
+            } else {
+                if 1.3 < overshoot {
+                    baseShift += 1
+                } else {
+                    if overshoot < 0.5 && 0 < baseShift {
+                        baseShift -= 2
+                    } else {
+                        if overshoot < 0.8 && 0 < baseShift {
+                            baseShift -= 1
+                        }
+                    }
+                }
             }
         }
         
-        if self.baseShift < 0 {
-            self.baseShift = 0
+        if baseShift < 0 {
+            baseShift = 0
         }
-        if 8 < self.baseShift {
-            self.baseShift = 8
+        if 5 < baseShift {
+            baseShift = 5
         }
         
-        return self.baseShift
+        return baseShift
+    }
+}
+
+public typealias RowFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int16) -> [Int16]
+
+public struct Scale {
+    public var minVal: Int16
+    public var maxVal: Int16
+    public let rowFn: RowFunc
+    
+    public init(rowFn: @escaping RowFunc) {
+        self.minVal = Int16.max
+        self.maxVal = Int16.min
+        self.rowFn = rowFn
+    }
+    
+    public mutating func rows(w: Int, h: Int, size: Int, prediction: Int16, baseShift: Int) -> ([[Int16]], Int) {
+        var rows = [[Int16]](repeating: [], count: size)
+        self.minVal = Int16.max
+        self.maxVal = Int16.min
+        
+        for i in 0..<size {
+            let r = rowFn(w, (h + i), size, prediction)
+            rows[i] = r
+            for v in r {
+                if v < minVal {
+                    minVal = v
+                }
+                if maxVal < v {
+                    maxVal = v
+                }
+            }
+        }
+        
+        let localScale = baseShift
+        return (rows, localScale)
     }
 }

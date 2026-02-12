@@ -1,161 +1,452 @@
-import CoreGraphics
 import Foundation
+import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-public class Image16 {
-    public var yPlane: [Int16]
-    public var cbPlane: [Int16]
-    public var crPlane: [Int16]
+// MARK: - Utilities
+
+func boundaryRepeat(_ width: Int, _ height: Int, _ px: Int, _ py: Int) -> (Int, Int) {
+    var x = px
+    var y = py
+    
+    // Width boundary
+    if width <= x {
+        x = (width - 1 - (x - width)) // Reflection
+        if x < 0 {
+            x = 0 // Clamp
+        }
+    } else {
+        if x < 0 {
+            x = (-1 * x)
+            if width <= x {
+                x = (width - 1)
+            }
+        }
+    }
+    
+    // Height boundary
+    if height <= y {
+        y = (height - 1 - (y - height))
+        if y < 0 {
+            y = 0
+        }
+    } else {
+        if y < 0 {
+            y = (-1 * y)
+            if height <= y {
+                y = (height - 1)
+            }
+        }
+    }
+    
+    return (x, y)
+}
+
+func clampU8(_ v: Int16) -> UInt8 {
+    if v < 0 {
+        return 0
+    }
+    if 255 < v {
+        return 255
+    }
+    return UInt8(v)
+}
+
+// MARK: - Image Structures
+
+public struct YCbCrImage {
+    public var yPlane: [UInt8]
+    public var cbPlane: [UInt8]
+    public var crPlane: [UInt8]
     public let width: Int
     public let height: Int
-
+    
+    public var yStride: Int { width }
+    public var cStride: Int { (width / 2) }
+    
     public init(width: Int, height: Int) {
         self.width = width
         self.height = height
-        self.yPlane = [Int16](repeating: 0, count: width * height)
-        self.cbPlane = [Int16](repeating: 0, count: (width / 2) * (height / 2))
-        self.crPlane = [Int16](repeating: 0, count: (width / 2) * (height / 2))
+        self.yPlane = [UInt8](repeating: 0, count: (width * height))
+        self.cbPlane = [UInt8](repeating: 0, count: ((width / 2) * (height / 2)))
+        self.crPlane = [UInt8](repeating: 0, count: ((width / 2) * (height / 2)))
     }
-
-    public func yOffset(x: Int, y: Int) -> Int {
-        return y * self.width + x
+    
+    public func yOffset(_ x: Int, _ y: Int) -> Int {
+        return ((y * yStride) + x)
     }
-
-    public func cOffset(x: Int, y: Int) -> Int {
-        return y * (self.width / 2) + x
+    
+    public func cOffset(_ x: Int, _ y: Int) -> Int {
+        return ((y * cStride) + x)
     }
+}
 
-    public func copy() -> Image16 {
-        let newImg = Image16(width: self.width, height: self.height)
-        newImg.yPlane = self.yPlane
-        newImg.cbPlane = self.cbPlane
-        newImg.crPlane = self.crPlane
-        return newImg
+public struct ImageReader {
+    public let img: YCbCrImage
+    public let width: Int
+    public let height: Int
+    
+    public init(img: YCbCrImage) {
+        self.img = img
+        self.width = img.width
+        self.height = img.height
     }
-
-    // MARK: - ImageIO Extensions
-
-    public convenience init?(url: URL) {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
-            return nil
+    
+    public func rowY(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+        var plane = [Int16](repeating: 0, count: size)
+        for i in 0..<size {
+            let (px, py) = boundaryRepeat(width, height, (x + i), y)
+            let offset = img.yOffset(px, py)
+            plane[i] = (Int16(img.yPlane[offset]) - prediction)
         }
-        self.init(cgImage: cgImage)
+        return plane
     }
+    
+    public func rowCb(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+        var plane = [Int16](repeating: 0, count: size)
+        for i in 0..<size {
+            let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
+            // Downsample for chroma lookup
+            let cPx = (rPx / 2)
+            let cPy = (rPy / 2)
+            let offset = img.cOffset(cPx, cPy)
+            plane[i] = (Int16(img.cbPlane[offset]) - prediction)
+        }
+        return plane
+    }
+    
+    public func rowCr(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+        var plane = [Int16](repeating: 0, count: size)
+        for i in 0..<size {
+            let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
+            let cPx = (rPx / 2)
+            let cPy = (rPy / 2)
+            let offset = img.cOffset(cPx, cPy)
+            plane[i] = (Int16(img.crPlane[offset]) - prediction)
+        }
+        return plane
+    }
+}
 
-    public convenience init(cgImage: CGImage) {
-        let width = cgImage.width
-        let height = cgImage.height
-        self.init(width: width, height: height)
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-        let bitsPerComponent = 8
-
-        var rawData = [UInt8](repeating: 0, count: height * bytesPerRow)
-        let context = CGContext(
-            data: &rawData,
-            width: width,
-            height: height,
-            bitsPerComponent: bitsPerComponent,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                | CGBitmapInfo.byteOrder32Big.rawValue)
-
-        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        // RGB -> YCbCr
-        for y in 0..<height {
-            for x in 0..<width {
-                let offset = y * bytesPerRow + x * bytesPerPixel
-                let r = Double(rawData[offset])
-                let g = Double(rawData[offset + 1])
-                let b = Double(rawData[offset + 2])
-
-                let yVal = 0.299 * r + 0.587 * g + 0.114 * b
-                let cbVal = -0.1687 * r - 0.3313 * g + 0.5 * b + 128
-                let crVal = 0.5 * r - 0.4187 * g - 0.0813 * b + 128
-
-                self.yPlane[self.yOffset(x: x, y: y)] = Int16(yVal)
-
-                if x % 2 == 0 && y % 2 == 0 {
-                    let cx = x / 2
-                    let cy = y / 2
-                    if cx < width / 2 && cy < height / 2 {
-                        self.cbPlane[self.cOffset(x: cx, y: cy)] = Int16(cbVal)
-                        self.crPlane[self.cOffset(x: cx, y: cy)] = Int16(crVal)
-                    }
+public class ImagePredictor {
+    public var img: YCbCrImage
+    public let width: Int
+    public let height: Int
+    
+    public init(width: Int, height: Int) {
+        self.img = YCbCrImage(width: width, height: height)
+        self.width = width
+        self.height = height
+    }
+    
+    public func updateY(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
+        for i in 0..<size {
+            if width <= (x + i) || height <= y {
+                continue
+            }
+            let offset = img.yOffset((x + i), y)
+            img.yPlane[offset] = clampU8(plane[i] + prediction)
+        }
+    }
+    
+    public func updateCb(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
+        for i in 0..<size {
+            let px = ((x + i) * 2)
+            let py = (y * 2)
+            if width <= px || height <= py {
+                continue
+            }
+            // COffset takes full res coords and downsamples
+            let cPx = (px / 2)
+            let cPy = (py / 2)
+            let offset = img.cOffset(cPx, cPy)
+            img.cbPlane[offset] = clampU8(plane[i] + prediction)
+        }
+    }
+    
+    public func updateCr(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
+        for i in 0..<size {
+            let px = ((x + i) * 2)
+            let py = (y * 2)
+            if width <= px || height <= py {
+                continue
+            }
+            let cPx = (px / 2)
+            let cPy = (py / 2)
+            let offset = img.cOffset(cPx, cPy)
+            img.crPlane[offset] = clampU8(plane[i] + prediction)
+        }
+    }
+    
+    public func predictY(x: Int, y: Int, size: Int) -> Int16 {
+        return predictDC(data: img.yPlane, stride: img.yStride, offset: img.yOffset(x, y), x: x, y: y, size: size)
+    }
+    
+    public func predictCb(x: Int, y: Int, size: Int) -> Int16 {
+        let cPx = x 
+        let cPy = y 
+        return predictDC(data: img.cbPlane, stride: img.cStride, offset: img.cOffset(cPx, cPy), x: x, y: y, size: size)
+    }
+    
+    public func predictCr(x: Int, y: Int, size: Int) -> Int16 {
+        let cPx = x
+        let cPy = y
+        return predictDC(data: img.crPlane, stride: img.cStride, offset: img.cOffset(cPx, cPy), x: x, y: y, size: size)
+    }
+    
+    private func predictDC(data: [UInt8], stride: Int, offset: Int, x: Int, y: Int, size: Int) -> Int16 {
+        var sum = 0
+        var count = 0
+        
+        if 0 < y {
+            let topStart = (offset - stride)
+            for i in 0..<size {
+                if (topStart + i) < data.count {
+                    sum += Int(data[topStart + i])
+                    count += 1
                 }
             }
         }
-    }
-
-    public func toCGImage() -> CGImage? {
-        let width = self.width
-        let height = self.height
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-
-        var rawData = [UInt8](repeating: 0, count: height * bytesPerRow)
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let yVal = Double(self.yPlane[self.yOffset(x: x, y: y)])
-
-                let cx = x / 2
-                let cy = y / 2
-                var cbVal: Double = 128
-                var crVal: Double = 128
-
-                if cx < width / 2 && cy < height / 2 {
-                    cbVal = Double(self.cbPlane[self.cOffset(x: cx, y: cy)])
-                    crVal = Double(self.crPlane[self.cOffset(x: cx, y: cy)])
+        
+        if 0 < x {
+            let leftStart = (offset - 1)
+            for i in 0..<size {
+                let idx = (leftStart + (i * stride))
+                if idx < data.count {
+                    sum += Int(data[idx])
+                    count += 1
                 }
-
-                let r = yVal + 1.402 * (crVal - 128)
-                let g = yVal - 0.34414 * (cbVal - 128) - 0.71414 * (crVal - 128)
-                let b = yVal + 1.772 * (cbVal - 128)
-
-                let offset = y * bytesPerRow + x * bytesPerPixel
-                rawData[offset] = clamp(r)
-                rawData[offset + 1] = clamp(g)
-                rawData[offset + 2] = clamp(b)
-                rawData[offset + 3] = 255  // Alpha
             }
         }
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let context = CGContext(
-            data: &rawData,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-        )
-
-        return context?.makeImage()
-    }
-
-    private func clamp(_ v: Double) -> UInt8 {
-        if v < 0 { return 0 }
-        if 255 < v { return 255 }
-        return UInt8(v)
-    }
-
-    public func save(to url: URL) -> Bool {
-        guard let cgImage = self.toCGImage() else { return false }
-        guard let destination = CGImageDestinationCreateWithURL(
-            url as CFURL, UTType.png.identifier as CFString, 1, nil
-        ) else {
-            return false
+        
+        if count == 0 {
+            return 128
         }
-        CGImageDestinationAddImage(destination, cgImage, nil)
-        return CGImageDestinationFinalize(destination)
+        return Int16(sum / count)
+    }
+}
+
+public struct Image16 {
+    public var y: [[Int16]]
+    public var cb: [[Int16]]
+    public var cr: [[Int16]]
+    public let width: Int
+    public let height: Int
+    
+    public init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+        self.y = [[Int16]](repeating: [Int16](repeating: 0, count: width), count: height)
+        self.cb = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
+        self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
+    }
+    
+    public func getY(x: Int, y: Int, size: Int) -> [[Int16]] {
+        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+        for h in 0..<size {
+            for w in 0..<size {
+                let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
+                plane[h][w] = self.y[py][px]
+            }
+        }
+        return plane
+    }
+    
+    public func getCb(x: Int, y: Int, size: Int) -> [[Int16]] {
+        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+        for h in 0..<size {
+            for w in 0..<size {
+                let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                plane[h][w] = self.cb[py][px]
+            }
+        }
+        return plane
+    }
+    
+    public func getCr(x: Int, y: Int, size: Int) -> [[Int16]] {
+        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+        for h in 0..<size {
+            for w in 0..<size {
+                let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                plane[h][w] = self.cr[py][px]
+            }
+        }
+        return plane
+    }
+    
+    public mutating func updateY(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+        for h in 0..<size {
+            if height <= (startY + h) {
+                continue
+            }
+            for w in 0..<size {
+                if width <= (startX + w) { // check bound
+                    continue
+                }
+                self.y[startY + h][startX + w] = (data[h][w] + prediction)
+            }
+        }
+    }
+    
+    public mutating func updateCb(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+        for h in 0..<size {
+            if (height / 2) <= (startY + h) {
+                continue
+            }
+            for w in 0..<size {
+                if (width / 2) <= (startX + w) {
+                     continue 
+                }
+                self.cb[startY + h][startX + w] = (data[h][w] + prediction)
+            }
+        }
+    }
+    
+    public mutating func updateCr(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+        for h in 0..<size {
+            if (height / 2) <= (startY + h) {
+                continue
+            }
+            for w in 0..<size {
+                 if (width / 2) <= (startX + w) {
+                     continue 
+                }
+                self.cr[startY + h][startX + w] = (data[h][w] + prediction)
+            }
+        }
+    }
+    
+    public func toYCbCr() -> YCbCrImage {
+        var img = YCbCrImage(width: width, height: height)
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = img.yOffset(x, y)
+                img.yPlane[offset] = clampU8(self.y[y][x])
+            }
+        }
+        
+        for y in 0..<(height / 2) {
+            for x in 0..<(width / 2) {
+                let offset = img.cOffset(x, y)
+                img.cbPlane[offset] = clampU8(self.cb[y][x])
+                img.crPlane[offset] = clampU8(self.cr[y][x])
+            }
+        }
+        return img
+    }
+}
+
+// MARK: - Image Conversion Helper
+
+public func pngToYCbCr(data: Data) throws -> YCbCrImage {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        throw NSError(domain: "ImageError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode Image"])
+    }
+    
+    let width = cgImage.width
+    let height = cgImage.height
+    var ycbcr = YCbCrImage(width: width, height: height)
+    
+    guard let dataProvider = cgImage.dataProvider,
+          let pixelData = dataProvider.data,
+          let _ = CFDataGetBytePtr(pixelData) else {
+        throw NSError(domain: "ImageError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get pixel data"])
+    }
+    
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bytesPerPixel = 4
+    let bytesPerRow = (bytesPerPixel * width)
+    var rawData = [UInt8](repeating: 0, count: (height * bytesPerRow))
+    
+    guard let context = CGContext(
+        data: &rawData,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+    ) else {
+        throw NSError(domain: "ImageError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create context"])
+    }
+    
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    
+    for y in 0..<height {
+        for x in 0..<width {
+            let offset = ((y * bytesPerRow) + (x * bytesPerPixel))
+            let r = Float(rawData[offset + 0])
+            let g = Float(rawData[offset + 1])
+            let b = Float(rawData[offset + 2])
+            
+            let yVal = ((0.29900 * r) + (0.58700 * g) + (0.11400 * b))
+            let cbVal = (((-1.0 * 0.16874) * r) - (0.33126 * g) + (0.50000 * b) + 128.0)
+            let crVal = ((0.50000 * r) - (0.41869 * g) - (0.08131 * b) + 128.0)
+            
+            let yIdx = ycbcr.yOffset(x, y)
+            ycbcr.yPlane[yIdx] = UInt8(clamping: Int(yVal))
+            
+            let cOff = ycbcr.cOffset((x / 2), (y / 2))
+             if cOff < ycbcr.cbPlane.count {
+                ycbcr.cbPlane[cOff] = UInt8(clamping: Int(cbVal))
+                ycbcr.crPlane[cOff] = UInt8(clamping: Int(crVal))
+            }
+        }
+    }
+    
+    return ycbcr
+}
+
+public func saveImage(img: YCbCrImage, url: URL) throws {
+    let width = img.width
+    let height = img.height
+    let bytesPerPixel = 4
+    let bytesPerRow = (bytesPerPixel * width)
+    var rawData = [UInt8](repeating: 0, count: (height * bytesPerRow))
+    
+    for y in 0..<height {
+        for x in 0..<width {
+            let yVal = Float(img.yPlane[img.yOffset(x, y)])
+            let cbVal = Float(img.cbPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
+            let crVal = Float(img.crPlane[img.cOffset((x / 2), (y / 2))]) - 128.0
+            
+            let r = Int((yVal + (1.40200 * crVal)))
+            let g = Int((yVal - (0.34414 * cbVal) - (0.71414 * crVal)))
+            let b = Int((yVal + (1.77200 * cbVal)))
+            
+            let offset = ((y * bytesPerRow) + (x * bytesPerPixel))
+            rawData[offset + 0] = UInt8(clamping: r)
+            rawData[offset + 1] = UInt8(clamping: g)
+            rawData[offset + 2] = UInt8(clamping: b)
+            rawData[offset + 3] = 255 // Alpha
+        }
+    }
+    
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let context = CGContext(
+        data: &rawData,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+    ) else {
+        throw NSError(domain: "ImageError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create context for output"])
+    }
+    
+    guard let cgImage = context.makeImage() else {
+        throw NSError(domain: "ImageError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create CGImage"])
+    }
+    
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+        throw NSError(domain: "ImageError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create image destination"])
+    }
+    
+    CGImageDestinationAddImage(destination, cgImage, nil)
+    if CGImageDestinationFinalize(destination) != true {
+        throw NSError(domain: "ImageError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to finalize image destination"])
     }
 }

@@ -1,323 +1,277 @@
 import Foundation
 
-let EncBlockSize = 16
+// MARK: - Encode
 
-func transformBlockData(out: BitWriter, data: UnsafeMutablePointer<Int16>, size: Int, scale: Int) {
-    // Write scale (uint8)
-    out.writeByte(UInt8(scale))
+let k: UInt8 = 1
 
-    quantizeBlock(block: data, size: size, scale: scale)
+func toUint16Encode(_ n: Int16) -> UInt16 {
+    return UInt16(bitPattern: ((n &<< 1) ^ (n >> 15)))
+}
 
-    var u16data = [UInt16](repeating: 0, count: size * size)
-    u16data.withUnsafeMutableBufferPointer { u16Bp in
-        let i16Bp = UnsafeMutableBufferPointer(
-            start: UnsafeMutablePointer<Int16>(OpaquePointer(u16Bp.baseAddress)),
-            count: u16Bp.count
-        )
-
-        let srcBp = UnsafeBufferPointer(start: data, count: size * size)
-        zigzag(data: srcBp, size: size, into: i16Bp)
+func blockEncode(rw: RiceWriter, block: [[Int16]], size: Int) {
+    for y in 0..<size {
+        for x in 0..<size {
+            rw.write(val: toUint16Encode(block[y][x]), k: k)
+        }
     }
+}
 
-    let rw = RiceWriter<UInt16>(bw: out)
-    blockRLEEncode(rw: rw, data: u16data)
+func transform(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) throws -> [[Int16]] {
+    var sub = dwt2d(&data, size: size)
+    
+    quantizeMid(&sub.hl, size: sub.size, scale: scale)
+    quantizeMid(&sub.lh, size: sub.size, scale: scale)
+    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    
+    // Write scale
+    bw.data.append(UInt8(scale))
+    
+    let rw = RiceWriter(bw: bw)
+    blockEncode(rw: rw, block: sub.hl, size: sub.size)
+    blockEncode(rw: rw, block: sub.lh, size: sub.size)
+    blockEncode(rw: rw, block: sub.hh, size: sub.size)
+    rw.flush()
+    
+    return sub.ll
+}
+
+func transformFull(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) throws {
+    var sub = dwt2d(&data, size: size)
+    
+    quantizeLow(&sub.ll, size: sub.size, scale: scale)
+    quantizeMid(&sub.hl, size: sub.size, scale: scale)
+    quantizeMid(&sub.lh, size: sub.size, scale: scale)
+    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    
+    // Write scale
+    bw.data.append(UInt8(scale))
+    
+    let rw = RiceWriter(bw: bw)
+    blockEncode(rw: rw, block: sub.ll, size: sub.size)
+    blockEncode(rw: rw, block: sub.hl, size: sub.size)
+    blockEncode(rw: rw, block: sub.lh, size: sub.size)
+    blockEncode(rw: rw, block: sub.hh, size: sub.size)
     rw.flush()
 }
 
-func encodeSubband(
-    plane: [Int16], width: Int, height: Int, startX: Int, startY: Int, endX: Int, endY: Int,
-    scaler: RateController
-) -> [Data] {
-    var out: [Data] = []
-    let blockSize = EncBlockSize
-    var scaleVal = 1
+public typealias PredictFunc = (_ x: Int, _ y: Int, _ size: Int) -> Int16
+public typealias UpdatePredictFunc = (_ x: Int, _ y: Int, _ size: Int, _ rows: [Int16], _ prediction: Int16) -> Void
 
-    for y in stride(from: startY, to: endY, by: blockSize) {
-        for x in stride(from: startX, to: endX, by: blockSize) {
-            // Extract block
-            var block = [Int16](repeating: 0, count: blockSize * blockSize)
-            for i in 0..<blockSize {
-                for j in 0..<blockSize {
-                    let px = x + j
-                    let py = y + i
-                    var val: Int16 = 0
-                    if px < width && py < height {
-                        val = plane[py * width + px]
-                    }
-                    block[i * blockSize + j] = val
-                }
-            }
-
-            // Encode block
-            let bw = BitWriter()
-            block.withUnsafeMutableBufferPointer { bp in
-                transformBlockData(out: bw, data: bp.baseAddress!, size: blockSize, scale: scaleVal)
-            }
-
-            let data = bw.data
-            out.append(data)
-
-            scaleVal = scaler.calcScale(addedBits: data.count * 8, addedPixels: blockSize * blockSize)
-        }
+func transformLayer(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredict: UpdatePredictFunc, scale: inout Scale, scaleVal: Int) throws -> (Data, [[Int16]], Int16) {
+    let prediction = predict(w, h, size)
+    let (rows, localScale) = scale.rows(w: w, h: h, size: size, prediction: prediction, baseShift: scaleVal)
+    
+    // Need a fresh BitWriter for just this block
+    let bw = BitWriter()
+    var mutableRows = rows
+    
+    let ll = try transform(bw: bw, data: &mutableRows, size: size, scale: localScale)
+    
+    // Local Reconstruction
+    let br = BitReader(data: bw.data) // Read what we just wrote (in memory)
+    let planes = try invertLayer(br: br, ll: ll, size: size)
+    
+    for i in 0..<size {
+        updatePredict(w, (h + i), size, planes[i], prediction)
     }
-    return out
+    
+    return (bw.data, ll, prediction)
 }
 
-func encodeLayer(src: Image16, maxbitrate: Int) -> (Data, Image16) {
-    var bufY: [Data] = []
-    var bufCb: [Data] = []
-    var bufCr: [Data] = []
-
-    let dx = src.width
-    let dy = src.height
-
-    // DWT Y
-    dwtPlane(data: &src.yPlane, width: dx, height: dy)
-
-    let nextW = dx / 2
-    let nextH = dy / 2
-    let nextImg = Image16(width: nextW, height: nextH)
-
-    // Copy LL to nextImg
-    for y in 0..<nextH {
-        for x in 0..<nextW {
-            nextImg.yPlane[nextImg.yOffset(x: x, y: y)] = src.yPlane[y * dx + x]
-        }
+func transformBase(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredict: UpdatePredictFunc, scale: inout Scale, scaleVal: Int) throws -> Data {
+    let prediction = predict(w, h, size)
+    let (rows, localScale) = scale.rows(w: w, h: h, size: size, prediction: prediction, baseShift: scaleVal)
+    
+    let bw = BitWriter()
+    var mutableRows = rows
+    
+    try transformFull(bw: bw, data: &mutableRows, size: size, scale: localScale)
+    
+    // Local Reconstruction
+    let br = BitReader(data: bw.data)
+    let planes = try invertFull(br: br, size: size)
+    
+    for i in 0..<size {
+        updatePredict(w, (h + i), size, planes[i], prediction)
     }
-
-    let scalerY = RateController(maxbit: maxbitrate, width: dx, height: dy)
-
-    // Encode HL, LH, HH
-    bufY.append(contentsOf: encodeSubband(
-        plane: src.yPlane, width: dx, height: dy, startX: nextW, startY: 0, endX: dx,
-        endY: nextH, scaler: scalerY
-    ))
-    bufY.append(contentsOf: encodeSubband(
-        plane: src.yPlane, width: dx, height: dy, startX: 0, startY: nextH, endX: nextW,
-        endY: dy, scaler: scalerY
-    ))
-    bufY.append(contentsOf: encodeSubband(
-        plane: src.yPlane, width: dx, height: dy, startX: nextW, startY: nextH, endX: dx,
-        endY: dy, scaler: scalerY
-    ))
-
-    // Chroma DWT
-    let cw = dx / 2
-    let ch = dy / 2
-    dwtPlane(data: &src.cbPlane, width: cw, height: ch)
-    dwtPlane(data: &src.crPlane, width: cw, height: ch)
-
-    let nextCW = cw / 2
-    let nextCH = ch / 2
-    for y in 0..<nextCH {
-        for x in 0..<nextCW {
-            nextImg.cbPlane[nextImg.cOffset(x: x, y: y)] = src.cbPlane[y * cw + x]
-            nextImg.crPlane[nextImg.cOffset(x: x, y: y)] = src.crPlane[y * cw + x]
-        }
-    }
-
-    // Encode Chroma
-    bufCb.append(contentsOf: encodeSubband(
-        plane: src.cbPlane, width: cw, height: ch, startX: nextCW, startY: 0, endX: cw,
-        endY: nextCH, scaler: scalerY
-    ))
-    bufCb.append(contentsOf: encodeSubband(
-        plane: src.cbPlane, width: cw, height: ch, startX: 0, startY: nextCH, endX: nextCW,
-        endY: ch, scaler: scalerY
-    ))
-    bufCb.append(contentsOf: encodeSubband(
-        plane: src.cbPlane, width: cw, height: ch, startX: nextCW, startY: nextCH, endX: cw,
-        endY: ch, scaler: scalerY
-    ))
-    bufCr.append(contentsOf: encodeSubband(
-        plane: src.crPlane, width: cw, height: ch, startX: nextCW, startY: 0, endX: cw,
-        endY: nextCH, scaler: scalerY
-    ))
-    bufCr.append(contentsOf: encodeSubband(
-        plane: src.crPlane, width: cw, height: ch, startX: 0, startY: nextCH, endX: nextCW,
-        endY: ch, scaler: scalerY
-    ))
-    bufCr.append(contentsOf: encodeSubband(
-        plane: src.crPlane, width: cw, height: ch, startX: nextCW, startY: nextCH, endX: cw,
-        endY: ch, scaler: scalerY
-    ))
-
-    let out = serializeStreams(
-        dx: dx, dy: dy, bufY: bufY, bufCb: bufCb, bufCr: bufCr, mbYSeq: nil, mbCbSeq: nil,
-        mbCrSeq: nil
-    )
-    return (out, nextImg)
-}
-
-func encodeBase(img: Image16, maxbitrate: Int) -> Data {
-    var bufY: [Data] = []
-    var bufCb: [Data] = []
-    var bufCr: [Data] = []
-
-    let dx = img.width
-    let dy = img.height
-
-    let scaler = RateController(maxbit: maxbitrate, width: dx, height: dy)
-    var scaleVal = 1
-
-    let blockSize = EncBlockSize
-
-    // Encode Y
-    for y in stride(from: 0, to: dy, by: blockSize) {
-        for x in stride(from: 0, to: dx, by: blockSize) {
-            // Extract block
-            var block = [Int16](repeating: 0, count: blockSize * blockSize)
-            for i in 0..<blockSize {
-                for j in 0..<blockSize {
-                    let px = x + j
-                    let py = y + i
-                    var val: Int16 = 0
-                    if px < dx && py < dy {
-                        val = img.yPlane[py * dx + px]
-                    }
-                    block[i * blockSize + j] = val
-                }
-            }
-
-            // DWT
-            block.withUnsafeMutableBufferPointer { bp in
-                if let ptr = bp.baseAddress {
-                    dwtBlock2Level(data: ptr, size: blockSize)
-                }
-            }
-
-            // Encode
-            let bw = BitWriter()
-            block.withUnsafeMutableBufferPointer { bp in
-                transformBlockData(out: bw, data: bp.baseAddress!, size: blockSize, scale: scaleVal)
-            }
-            let data = bw.data
-            bufY.append(data)
-            scaleVal = scaler.calcScale(addedBits: data.count * 8, addedPixels: blockSize * blockSize)
-        }
-    }
-
-    // Encode Chroma
-    let cw = dx / 2
-    let ch = dy / 2
-
-    // Cb
-    for y in stride(from: 0, to: ch, by: blockSize) {
-        for x in stride(from: 0, to: cw, by: blockSize) {
-            var block = [Int16](repeating: 0, count: blockSize * blockSize)
-            for i in 0..<blockSize {
-                for j in 0..<blockSize {
-                    let px = x + j
-                    let py = y + i
-                    var val: Int16 = 0
-                    if px < cw && py < ch {
-                        val = img.cbPlane[py * cw + px]
-                    }
-                    block[i * blockSize + j] = val
-                }
-            }
-            block.withUnsafeMutableBufferPointer { bp in
-                if let ptr = bp.baseAddress {
-                    dwtBlock2Level(data: ptr, size: blockSize)
-                }
-            }
-            let bw = BitWriter()
-            block.withUnsafeMutableBufferPointer { bp in
-                transformBlockData(out: bw, data: bp.baseAddress!, size: blockSize, scale: scaleVal)
-            }
-            let data = bw.data
-            bufCb.append(data)
-            scaleVal = scaler.calcScale(addedBits: data.count * 8, addedPixels: blockSize * blockSize)
-        }
-    }
-
-    // Cr
-    for y in stride(from: 0, to: ch, by: blockSize) {
-        for x in stride(from: 0, to: cw, by: blockSize) {
-            var block = [Int16](repeating: 0, count: blockSize * blockSize)
-            for i in 0..<blockSize {
-                for j in 0..<blockSize {
-                    let px = x + j
-                    let py = y + i
-                    var val: Int16 = 0
-                    if px < cw && py < ch {
-                        val = img.crPlane[py * cw + px]
-                    }
-                    block[i * blockSize + j] = val
-                }
-            }
-            block.withUnsafeMutableBufferPointer { bp in
-                if let ptr = bp.baseAddress {
-                    dwtBlock2Level(data: ptr, size: blockSize)
-                }
-            }
-            let bw = BitWriter()
-            block.withUnsafeMutableBufferPointer { bp in
-                transformBlockData(out: bw, data: bp.baseAddress!, size: blockSize, scale: scaleVal)
-            }
-            let data = bw.data
-            bufCr.append(data)
-            scaleVal = scaler.calcScale(addedBits: data.count * 8, addedPixels: blockSize * blockSize)
-        }
-    }
-
-    return serializeStreams(
-        dx: dx, dy: dy, bufY: bufY, bufCb: bufCb, bufCr: bufCr, mbYSeq: nil, mbCbSeq: nil,
-        mbCrSeq: nil
-    )
-}
-
-func serializeStreams(
-    dx: Int, dy: Int, bufY: [Data], bufCb: [Data], bufCr: [Data], mbYSeq: [UInt8]?,
-    mbCbSeq: [UInt8]?, mbCrSeq: [UInt8]?
-) -> Data {
-    let bw = BinaryWriter()
-
-    bw.write(UInt16(dx))
-    bw.write(UInt16(dy))
-
-    let ySize = bufY.reduce(0) { $0 + $1.count }
-    bw.write(UInt32(ySize))
-    for b in bufY {
-        bw.write(UInt16(b.count))
-        bw.append(b)
-    }
-
-    let cbSize = bufCb.reduce(0) { $0 + $1.count }
-    bw.write(UInt32(cbSize))
-    for b in bufCb {
-        bw.write(UInt16(b.count))
-        bw.append(b)
-    }
-
-    let crSize = bufCr.reduce(0) { $0 + $1.count }
-    bw.write(UInt32(crSize))
-    for b in bufCr {
-        bw.write(UInt16(b.count))
-        bw.append(b)
-    }
-
-    if let seq = mbYSeq {
-        bw.write(UInt32(seq.count))
-        bw.append(contentsOf: seq)
-    }
-    if let seq = mbCbSeq {
-        bw.write(UInt32(seq.count))
-        bw.append(contentsOf: seq)
-    }
-    if let seq = mbCrSeq {
-        bw.write(UInt32(seq.count))
-        bw.append(contentsOf: seq)
-    }
-
+    
     return bw.data
 }
 
-public func encode(img: Image16, maxbitrate: Int) -> (Data, Data, Data) {
-    let (layer2, nextImg) = encodeLayer(src: img, maxbitrate: maxbitrate)
-    let (layer1, nextImg2) = encodeLayer(src: nextImg, maxbitrate: maxbitrate)
+func encodeLayer(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int) throws -> (Data, Image16, Int) {
+    var bufY: [Data] = []
+    var bufCb: [Data] = []
+    var bufCr: [Data] = []
+    
+    let dx = r.width
+    let dy = r.height
+    
+    var sub = Image16(width: (dx / 2), height: (dy / 2))
+    var currentScaleVal = scaleVal
+    
+    // Y
+    var scaleY = Scale(rowFn: r.rowY)
+    let tmp = ImagePredictor(width: dx, height: dy)
+    
+    for h in stride(from: 0, to: dy, by: size) {
+        for w in stride(from: 0, to: dx, by: size) {
+            let (data, ll, prediction) = try transformLayer(w: w, h: h, size: size, predict: tmp.predictY, updatePredict: tmp.updateY, scale: &scaleY, scaleVal: currentScaleVal)
+            bufY.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+            
+            sub.updateY(data: ll, prediction: prediction, startX: (w / 2), startY: (h / 2), size: (size / 2))
+        }
+    }
+    
+    // Cb
+    var scaleCb = Scale(rowFn: r.rowCb)
+    for h in stride(from: 0, to: (dy / 2), by: size) {
+        for w in stride(from: 0, to: (dx / 2), by: size) {
+             let (data, ll, prediction) = try transformLayer(w: w, h: h, size: size, predict: tmp.predictCb, updatePredict: tmp.updateCb, scale: &scaleCb, scaleVal: currentScaleVal)
+            bufCb.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+            
+            sub.updateCb(data: ll, prediction: prediction, startX: (w / 2), startY: (h / 2), size: (size / 2))
+        }
+    }
+    
+    // Cr
+    var scaleCr = Scale(rowFn: r.rowCr)
+    for h in stride(from: 0, to: (dy / 2), by: size) {
+        for w in stride(from: 0, to: (dx / 2), by: size) {
+            let (data, ll, prediction) = try transformLayer(w: w, h: h, size: size, predict: tmp.predictCr, updatePredict: tmp.updateCr, scale: &scaleCr, scaleVal: currentScaleVal)
+            bufCr.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+            
+            sub.updateCr(data: ll, prediction: prediction, startX: (w / 2), startY: (h / 2), size: (size / 2))
+        }
+    }
+    
+    var out = Data()
+    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    
+    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufY {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCb {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCr {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    return (out, sub, currentScaleVal)
+}
 
-    let layer0 = encodeBase(img: nextImg2, maxbitrate: maxbitrate)
+func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int) throws -> Data {
+    var bufY: [Data] = []
+    var bufCb: [Data] = []
+    var bufCr: [Data] = []
+    
+    let dx = r.width
+    let dy = r.height
+    
+    var currentScaleVal = scaleVal
+    
+    // Y
+    var scaleY = Scale(rowFn: r.rowY)
+    let tmp = ImagePredictor(width: dx, height: dy)
+    
+    for h in stride(from: 0, to: dy, by: size) {
+        for w in stride(from: 0, to: dx, by: size) {
+            let data = try transformBase(w: w, h: h, size: size, predict: tmp.predictY, updatePredict: tmp.updateY, scale: &scaleY, scaleVal: currentScaleVal)
+            bufY.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+        }
+    }
+    
+    // Cb
+    var scaleCb = Scale(rowFn: r.rowCb)
+    for h in stride(from: 0, to: (dy / 2), by: size) {
+        for w in stride(from: 0, to: (dx / 2), by: size) {
+            let data = try transformBase(w: w, h: h, size: size, predict: tmp.predictCb, updatePredict: tmp.updateCb, scale: &scaleCb, scaleVal: currentScaleVal)
+            bufCb.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+        }
+    }
+    
+    // Cr
+    var scaleCr = Scale(rowFn: r.rowCr)
+    for h in stride(from: 0, to: (dy / 2), by: size) {
+        for w in stride(from: 0, to: (dx / 2), by: size) {
+            let data = try transformBase(w: w, h: h, size: size, predict: tmp.predictCr, updatePredict: tmp.updateCr, scale: &scaleCr, scaleVal: currentScaleVal)
+            bufCr.append(data)
+            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
+        }
+    }
+    
+    var out = Data()
+    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    
+    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufY {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCb {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCr {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    return out
+}
 
-    return (layer0, layer1, layer2)
+public func encode(img: YCbCrImage, maxbitrate: Int) throws -> Data {
+    let dx = img.width
+    let dy = img.height
+    
+    let l2 = ((dx * dy * 3) / 2)
+    let l1 = (((dx / 2) * (dy / 2) * 3) / 2)
+    let l0 = (((dx / 4) * (dy / 4) * 3) / 2)
+    let totalPixels = ((l2 + l1) + l0)
+    
+    let scaler = RateController(maxbit: maxbitrate, totalProcessPixels: totalPixels, baseShift: 2)
+    var scaleVal = 1
+    
+    let r2 = ImageReader(img: img)
+    let (layer2, sub2, nextScale1) = try encodeLayer(r: r2, scaler: scaler, scaleVal: scaleVal, size: 32)
+    scaleVal = nextScale1
+    
+    let r1 = ImageReader(img: sub2.toYCbCr())
+    let (layer1, sub1, nextScale2) = try encodeLayer(r: r1, scaler: scaler, scaleVal: scaleVal, size: 16)
+    scaleVal = nextScale2
+    
+    let r0 = ImageReader(img: sub1.toYCbCr())
+    let layer0 = try encodeBase(r: r0, scaler: scaler, scaleVal: scaleVal, size: 8)
+    
+    var out = Data()
+    
+    withUnsafeBytes(of: UInt32(layer0.count).bigEndian) { out.append(contentsOf: $0) }
+    out.append(layer0)
+    
+    withUnsafeBytes(of: UInt32(layer1.count).bigEndian) { out.append(contentsOf: $0) }
+    out.append(layer1)
+    
+    withUnsafeBytes(of: UInt32(layer2.count).bigEndian) { out.append(contentsOf: $0) }
+    out.append(layer2)
+    
+    return out
 }

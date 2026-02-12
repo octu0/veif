@@ -1,229 +1,191 @@
-import Foundation
 
-func lift53(arr: UnsafeMutablePointer<Int16>, n: Int) {
-    let half = n / 2
+// MARK: - DWT Structures
+
+public struct Subbands {
+    public var ll: [[Int16]]
+    public var hl: [[Int16]]
+    public var lh: [[Int16]]
+    public var hh: [[Int16]]
+    public let size: Int
+}
+
+// MARK: - LeGall 5/3 Lifting
+
+public func lift53(_ data: inout [Int16]) {
+    let n = data.count
+    let half = (n / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
-
-    // Split even/odd
+    
+    // Split
     for i in 0..<half {
-        low[i] = arr[2 * i]
-        high[i] = arr[(2 * i) + 1]
+        low[i] = data[2 * i]
+        high[i] = data[(2 * i) + 1]
     }
-
+    
     // Predict
     for i in 0..<half {
         let l = Int32(low[i])
         var r = Int32(low[i])
-        if i + 1 < half {
+        if (i + 1) < half {
             r = Int32(low[i + 1])
         }
         high[i] -= Int16((l + r) >> 1)
     }
-
+    
     // Update
     for i in 0..<half {
         let d = Int32(high[i])
         var dp = Int32(high[i])
-        if 0 <= i - 1 {
+        if 0 <= (i - 1) {
             dp = Int32(high[i - 1])
         }
-        low[i] += Int16((dp + d + 2) >> 2)
+        low[i] += Int16(((dp + d) + 2) >> 2)
     }
-
-    // Merge back
+    
+    // Merge
     for i in 0..<half {
-        arr[i] = low[i]
-        arr[half + i] = high[i]
+        data[i] = low[i]
+        data[half + i] = high[i]
     }
 }
 
-func invLift53(arr: UnsafeMutablePointer<Int16>, n: Int) {
-    let half = n / 2
+public func invLift53(_ data: inout [Int16]) {
+    let n = data.count
+    let half = (n / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
-
+    
     // Split
     for i in 0..<half {
-        low[i] = arr[i]
-        high[i] = arr[half + i]
+        low[i] = data[i]
+        high[i] = data[half + i]
     }
-
+    
     // Inv Update
     for i in 0..<half {
         let d = Int32(high[i])
         var dp = Int32(high[i])
-        if 0 <= i - 1 {
+        if 0 <= (i - 1) {
             dp = Int32(high[i - 1])
         }
-        low[i] -= Int16((dp + d + 2) >> 2)
+        low[i] -= Int16(((dp + d) + 2) >> 2)
     }
-
+    
     // Inv Predict
     for i in 0..<half {
         let l = Int32(low[i])
         var r = Int32(low[i])
-        if i + 1 < half {
+        if (i + 1) < half {
             r = Int32(low[i + 1])
         }
         high[i] += Int16((l + r) >> 1)
     }
-
-    // Merge back interleaved
+    
+    // Merge
     for i in 0..<half {
-        arr[2 * i] = low[i]
-        arr[(2 * i) + 1] = high[i]
+        data[2 * i] = low[i]
+        data[(2 * i) + 1] = high[i]
     }
 }
 
-func dwtBlock(data: UnsafeMutablePointer<Int16>, size: Int) {
-    var buf = [Int16](repeating: 0, count: size)
+// MARK: - 2D DWT
 
-    // Row transform
+public func dwt2d(_ data: inout [[Int16]], size: Int) -> Subbands {
+    // Horizontal
     for y in 0..<size {
-        // data[y*size] is start of row
-        lift53(arr: data.advanced(by: y * size), n: size)
+        lift53(&data[y])
     }
-
-    // Col transform
-    for x in 0..<size {
-        // Gather column
-        for y in 0..<size {
-            buf[y] = data[y * size + x]
-        }
-
-        // Lift
-        buf.withUnsafeMutableBufferPointer { bp in
-            lift53(arr: bp.baseAddress!, n: size)
-        }
-
-        // Scatter column
-        for y in 0..<size {
-            data[y * size + x] = buf[y]
-        }
-    }
-}
-
-func invDwtBlock(data: UnsafeMutablePointer<Int16>, size: Int) {
-    var buf = [Int16](repeating: 0, count: size)
-
-    // Inv Col transform
+    
+    // Vertical
+    var col = [Int16](repeating: 0, count: size)
     for x in 0..<size {
         for y in 0..<size {
-            buf[y] = data[y * size + x]
+            col[y] = data[y][x]
         }
-        buf.withUnsafeMutableBufferPointer { bp in
-            invLift53(arr: bp.baseAddress!, n: size)
-        }
+        lift53(&col)
         for y in 0..<size {
-            data[y * size + x] = buf[y]
+            data[y][x] = col[y]
         }
     }
-
-    // Inv Row transform
-    for y in 0..<size {
-        invLift53(arr: data.advanced(by: y * size), n: size)
-    }
-}
-
-func dwtBlock2Level(data: UnsafeMutablePointer<Int16>, size: Int) {
-    dwtBlock(data: data, size: size)
-
-    if size < 16 {
-        return
-    }
-
-    let half = size / 2
-
-    var ll = [Int16](repeating: 0, count: half * half)
+    
+    let half = ((size + 1) / 2)
+    
+    var sub = Subbands(
+        ll: [[Int16]](repeating: [Int16](repeating: 0, count: half), count: half),
+        hl: [[Int16]](repeating: [Int16](repeating: 0, count: half), count: half),
+        lh: [[Int16]](repeating: [Int16](repeating: 0, count: half), count: half),
+        hh: [[Int16]](repeating: [Int16](repeating: 0, count: half), count: half),
+        size: half
+    )
+    
     for y in 0..<half {
-        for x in 0..<half {
-            ll[y * half + x] = data[y * size + x]
-        }
-    }
-
-    ll.withUnsafeMutableBufferPointer { bp in
-        dwtBlock(data: bp.baseAddress!, size: half)
-    }
-
-    for y in 0..<half {
-        for x in 0..<half {
-            data[y * size + x] = ll[y * half + x]
-        }
-    }
-}
-
-func invDwtBlock2Level(data: UnsafeMutablePointer<Int16>, size: Int) {
-    if 16 <= size {
-        let half = size / 2
-        var ll = [Int16](repeating: 0, count: half * half)
-        for y in 0..<half {
-            for x in 0..<half {
-                ll[y * half + x] = data[y * size + x]
-            }
-        }
-
-        ll.withUnsafeMutableBufferPointer { bp in
-            invDwtBlock(data: bp.baseAddress!, size: half)
-        }
-
-        for y in 0..<half {
-            for x in 0..<half {
-                data[y * size + x] = ll[y * half + x]
+        for x in 0..<size {
+            let val = data[y][x]
+            if x < half {
+                sub.ll[y][x] = val // Top-Left
+            } else {
+                sub.hl[y][x - half] = val // Top-Right
             }
         }
     }
-    invDwtBlock(data: data, size: size)
+    
+    for y in half..<size {
+        for x in 0..<size {
+            let val = data[y][x]
+            if x < half {
+                sub.lh[y - half][x] = val // Bottom-Left
+            } else {
+                sub.hh[y - half][x - half] = val // Bottom-Right
+            }
+        }
+    }
+    
+    return sub
 }
 
-func dwtPlane(data: inout [Int16], width: Int, height: Int) {
-    // Row transform
-    data.withUnsafeMutableBufferPointer { bp in
-        let ptr = bp.baseAddress!
-        for y in 0..<height {
-            lift53(arr: ptr.advanced(by: y * width), n: width)
+public func invDwt2d(_ sub: Subbands) -> [[Int16]] {
+    let half = sub.size
+    let size = (sub.size * 2)
+    
+    var data = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+    
+    for y in 0..<half {
+        for x in 0..<size {
+            if x < half {
+                data[y][x] = sub.ll[y][x]
+            } else {
+                data[y][x] = sub.hl[y][x - half]
+            }
         }
     }
-
-    // Col transform
-    var col = [Int16](repeating: 0, count: height)
-    for x in 0..<width {
-        for y in 0..<height {
-            col[y] = data[y * width + x]
-        }
-
-        col.withUnsafeMutableBufferPointer { bp in
-            lift53(arr: bp.baseAddress!, n: height)
-        }
-
-        for y in 0..<height {
-            data[y * width + x] = col[y]
+    
+    for y in half..<size {
+        for x in 0..<size {
+            if x < half {
+                data[y][x] = sub.lh[y - half][x]
+            } else {
+                data[y][x] = sub.hh[y - half][x - half]
+            }
         }
     }
-}
-
-func invDwtPlane(data: inout [Int16], width: Int, height: Int) {
-    // Inv Col transform
-    var col = [Int16](repeating: 0, count: height)
-    for x in 0..<width {
-        for y in 0..<height {
-            col[y] = data[y * width + x]
+    
+    // Vertical
+    var col = [Int16](repeating: 0, count: size)
+    for x in 0..<size {
+        for y in 0..<size {
+            col[y] = data[y][x]
         }
-
-        col.withUnsafeMutableBufferPointer { bp in
-            invLift53(arr: bp.baseAddress!, n: height)
-        }
-
-        for y in 0..<height {
-            data[y * width + x] = col[y]
+        invLift53(&col)
+        for y in 0..<size {
+            data[y][x] = col[y]
         }
     }
-
-    // Inv Row transform
-    data.withUnsafeMutableBufferPointer { bp in
-        let ptr = bp.baseAddress!
-        for y in 0..<height {
-            invLift53(arr: ptr.advanced(by: y * width), n: width)
-        }
+    
+    // Horizontal
+    for y in 0..<size {
+        invLift53(&data[y])
     }
+    
+    return data
 }

@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Debug example",
+            "target": "example",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug example"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Release example",
+            "target": "example",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release example"
+        }
+    ]
+}

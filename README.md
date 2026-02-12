@@ -35,24 +35,29 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 | Layer | Resolution | Size | Image |
 | :--- | :--- | :--- | :--- |
-| Layer0 | 1/4 | 11.24KB | ![Layer0](docs/out_layer0.png) |
-| Layer1 | 1/2 | 21.39KB | ![Layer1](docs/out_layer1.png) |
-| Layer2 | 1 | 24.73KB | ![Layer2](docs/out_layer2.png) |
+| Layer0 | 1/4 | 2.35KB | ![Layer0](docs/out_layer0.png) |
+| Layer1 | 1/2 | 6.33KB | ![Layer1](docs/out_layer1.png) |
+| Layer2 | 1 | 17.62KB | ![Layer2](docs/out_layer2.png) |
 | original | 1 | 225KB | ![original](docs/src.png) |
 
 ## Internals
 
-- YCbCr 4:2:0
-- Multi-Resolution Discrete Wavelet Transform (LeGall 5/3)
-  - Global DWT (Full frame transform, no block artifacts)
+- **Color Space**: YCbCr 4:2:0
+- **Transform**: Multi-Resolution Discrete Wavelet Transform (LeGall 5/3) 2-level 2D block transform
+  - Macroblock DWT (no block artifacts)
   - 3-Layer Progressive Encoding
     - Layer 0: Thumbnail (Base LL band)
     - Layer 1: Medium Quality (Adds HL, LH, HH of level 1)
     - Layer 2: High Quality (Adds HL, LH, HH of level 0)
-- Content-Adaptive Bit-shift Quantization
-- Unified Block RLE / Rice coding
-  - Signed integer mapping (Zigzag mapping) for efficient Rice coding
-- Virtual Buffer based CBR (Rate Controller)
+- **Quantization**: Content-Adaptive Bit-shift Quantization
+  - Flatness detection using HH subband analysis
+- **Entropy Coding**: Zero-run Rice coding
+  - RLE zero-run cap (maxVal=64) for stability
+- **Rate Control**: Progress-based CBR Rate Controller
+  - Shared `RateController` across all layers
+  - Dynamic `baseShift` adjustment via overshoot ratio against `targetBitsProgress`
+- **Prediction**: Intra Prediction
+- **Multi-Resolution**: 3-layer structure — Layer0 (1/4) → Layer1 (1/2) → Layer2 (1/1)
 
 ## CLI Usage
 
