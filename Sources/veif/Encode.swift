@@ -8,15 +8,13 @@ func toUint16Encode(_ n: Int16) -> UInt16 {
     return UInt16(bitPattern: ((n &<< 1) ^ (n >> 15)))
 }
 
-func blockEncode(rw: RiceWriter, block: [[Int16]], size: Int) {
-    for y in 0..<size {
-        for x in 0..<size {
-            rw.write(val: toUint16Encode(block[y][x]), k: k)
-        }
+func blockEncode(rw: RiceWriter, block: Block2D, size: Int) {
+    for i in 0..<(size * size) {
+        rw.write(val: toUint16Encode(block.data[i]), k: k)
     }
 }
 
-func transform(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) throws -> [[Int16]] {
+func transform(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) throws -> Block2D {
     var sub = dwt2d(&data, size: size)
     
     quantizeMid(&sub.hl, size: sub.size, scale: scale)
@@ -35,7 +33,7 @@ func transform(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) thro
     return sub.ll
 }
 
-func transformFull(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) throws {
+func transformFull(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) throws {
     var sub = dwt2d(&data, size: size)
     
     quantizeLow(&sub.ll, size: sub.size, scale: scale)
@@ -57,7 +55,7 @@ func transformFull(bw: BitWriter, data: inout [[Int16]], size: Int, scale: Int) 
 public typealias PredictFunc = (_ x: Int, _ y: Int, _ size: Int) -> Int16
 public typealias UpdatePredictFunc = (_ x: Int, _ y: Int, _ size: Int, _ rows: [Int16], _ prediction: Int16) -> Void
 
-func transformLayer(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredict: UpdatePredictFunc, scale: inout Scale, scaleVal: Int) throws -> (Data, [[Int16]], Int16) {
+func transformLayer(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredict: UpdatePredictFunc, scale: inout Scale, scaleVal: Int) throws -> (Data, Block2D, Int16) {
     let prediction = predict(w, h, size)
     let (rows, localScale) = scale.rows(w: w, h: h, size: size, prediction: prediction, baseShift: scaleVal)
     
@@ -72,7 +70,9 @@ func transformLayer(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredi
     let planes = try invertLayer(br: br, ll: ll, size: size)
     
     for i in 0..<size {
-        updatePredict(w, (h + i), size, planes[i], prediction)
+        let offset = planes.rowOffset(y: i)
+        let row = Array(planes.data[offset..<(offset + size)])
+        updatePredict(w, (h + i), size, row, prediction)
     }
     
     return (bw.data, ll, prediction)
@@ -92,7 +92,9 @@ func transformBase(w: Int, h: Int, size: Int, predict: PredictFunc, updatePredic
     let planes = try invertFull(br: br, size: size)
     
     for i in 0..<size {
-        updatePredict(w, (h + i), size, planes[i], prediction)
+        let offset = planes.rowOffset(y: i)
+        let row = Array(planes.data[offset..<(offset + size)])
+        updatePredict(w, (h + i), size, row, prediction)
     }
     
     return bw.data
@@ -127,7 +129,7 @@ func encodeLayer(r: ImageReader, scaler: RateController, scaleVal: Int, size: In
     var scaleCb = Scale(rowFn: r.rowCb)
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-             let (data, ll, prediction) = try transformLayer(w: w, h: h, size: size, predict: tmp.predictCb, updatePredict: tmp.updateCb, scale: &scaleCb, scaleVal: currentScaleVal)
+            let (data, ll, prediction) = try transformLayer(w: w, h: h, size: size, predict: tmp.predictCb, updatePredict: tmp.updateCb, scale: &scaleCb, scaleVal: currentScaleVal)
             bufCb.append(data)
             currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
             

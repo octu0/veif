@@ -162,7 +162,7 @@ public struct ImageReader {
     }
 }
 
-public class ImagePredictor {
+public class ImagePredictor: @unchecked Sendable {
     public var img: YCbCrImage
     public let width: Int
     public let height: Int
@@ -260,7 +260,7 @@ public class ImagePredictor {
     }
 }
 
-public struct Image16 {
+public struct Image16: Sendable {
     public var y: [[Int16]]
     public var cb: [[Int16]]
     public var cr: [[Int16]]
@@ -275,77 +275,77 @@ public struct Image16 {
         self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
     }
     
-    public func getY(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
-        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+    public func getY(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
-                plane[h][w] = self.y[py][px] - prediction
+                block[h, w] = self.y[py][px] - prediction
             }
         }
-        return plane
+        return block
     }
     
-    public func getCb(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
-        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+    public func getCb(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                plane[h][w] = self.cb[py][px] - prediction
+                block[h, w] = self.cb[py][px] - prediction
             }
         }
-        return plane
+        return block
     }
     
-    public func getCr(x: Int, y: Int, size: Int, prediction: Int16) -> [[Int16]] {
-        var plane = [[Int16]](repeating: [Int16](repeating: 0, count: size), count: size)
+    public func getCr(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                plane[h][w] = self.cr[py][px] - prediction
+                block[h, w] = self.cr[py][px] - prediction
             }
         }
-        return plane
+        return block
     }
     
-    public mutating func updateY(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateY(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if height <= (startY + h) {
                 continue
             }
             for w in 0..<size {
-                if width <= (startX + w) { // check bound
+                if width <= (startX + w) {
                     continue
                 }
-                self.y[startY + h][startX + w] = (data[h][w] + prediction)
+                self.y[startY + h][startX + w] = (data[h, w] + prediction)
             }
         }
     }
     
-    public mutating func updateCb(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCb(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if (height / 2) <= (startY + h) {
                 continue
             }
             for w in 0..<size {
                 if (width / 2) <= (startX + w) {
-                     continue 
+                    continue
                 }
-                self.cb[startY + h][startX + w] = (data[h][w] + prediction)
+                self.cb[startY + h][startX + w] = (data[h, w] + prediction)
             }
         }
     }
     
-    public mutating func updateCr(data: [[Int16]], prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCr(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if (height / 2) <= (startY + h) {
                 continue
             }
             for w in 0..<size {
-                 if (width / 2) <= (startX + w) {
-                     continue 
+                if (width / 2) <= (startX + w) {
+                    continue
                 }
-                self.cr[startY + h][startX + w] = (data[h][w] + prediction)
+                self.cr[startY + h][startX + w] = (data[h, w] + prediction)
             }
         }
     }

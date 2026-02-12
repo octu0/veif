@@ -2,20 +2,19 @@ import Foundation
 
 // MARK: - Decode Logic
 
-func blockDecode(rr: RiceReader, size: Int) throws -> [[Int16]] {
-    var data = [[Int16]](repeating: [], count: size)
+func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
+    var block = Block2D(width: size, height: size)
     for y in 0..<size {
-        var tmp = [Int16](repeating: 0, count: size)
+        let offset = block.rowOffset(y: y)
         for x in 0..<size {
             let v = try rr.read(k: k)
-            tmp[x] = toInt16(v)
+            block.data[offset + x] = toInt16(v)
         }
-        data[y] = tmp
     }
-    return data
+    return block
 }
 
-func invertLayer(br: BitReader, ll: [[Int16]], size: Int) throws -> [[Int16]] {
+func invertLayer(br: BitReader, ll: Block2D, size: Int) throws -> Block2D {
     let scaleU8 = try br.readBits(n: 8)
     let scale = Int(scaleU8)
     
@@ -33,7 +32,7 @@ func invertLayer(br: BitReader, ll: [[Int16]], size: Int) throws -> [[Int16]] {
     return invDwt2d(sub)
 }
 
-func invertFull(br: BitReader, size: Int) throws -> [[Int16]] {
+func invertFull(br: BitReader, size: Int) throws -> Block2D {
     let scaleU8 = try br.readBits(n: 8)
     let scale = Int(scaleU8)
     
@@ -54,25 +53,29 @@ func invertFull(br: BitReader, size: Int) throws -> [[Int16]] {
 }
 
 public typealias SetRowFunc = (_ x: Int, _ y: Int, _ size: Int, _ plane: [Int16], _ prediction: Int16) -> Void
-public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int16) -> [[Int16]]
+public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int16) -> Block2D
 
-func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc, getLL: GetLLFunc) throws -> ([[Int16]], Int16) {
+func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc, getLL: GetLLFunc) throws -> (Block2D, Int16) {
     let prediction = predict(w, h, size)
     let ll = getLL(w/2, h/2, size/2, prediction)
     let planes = try invertLayer(br: br, ll: ll, size: size)
     
     for i in 0..<size {
-        setRow(w, (h + i), size, planes[i], prediction)
+        let offset = planes.rowOffset(y: i)
+        let row = Array(planes.data[offset..<(offset + size)])
+        setRow(w, (h + i), size, row, prediction)
     }
     return (planes, prediction)
 }
 
-func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc) throws -> ([[Int16]], Int16) {
+func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc) throws -> (Block2D, Int16) {
     let prediction = predict(w, h, size)
     let planes = try invertFull(br: br, size: size)
     
     for i in 0..<size {
-        setRow(w, (h + i), size, planes[i], prediction)
+        let offset = planes.rowOffset(y: i)
+        let row = Array(planes.data[offset..<(offset + size)])
+        setRow(w, (h + i), size, row, prediction)
     }
     return (planes, prediction)
 }
@@ -134,7 +137,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
     // Cb
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-             guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
+            guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
@@ -215,11 +218,11 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
     // Cb
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-             guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
+            guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-              let (ll, prediction) = try invertBaseFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb)
+            let (ll, prediction) = try invertBaseFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb)
             sub.updateCb(data: ll, prediction: prediction, startX: w, startY: h, size: size)
         }
     }

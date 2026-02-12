@@ -64,15 +64,17 @@ public struct Scale {
         self.rowFn = rowFn
     }
     
-    public mutating func rows(w: Int, h: Int, size: Int, prediction: Int16, baseShift: Int) -> ([[Int16]], Int) {
-        var rows = [[Int16]](repeating: [], count: size)
+    public mutating func rows(w: Int, h: Int, size: Int, prediction: Int16, baseShift: Int) -> (Block2D, Int) {
+        var block = Block2D(width: size, height: size)
         self.minVal = Int16.max
         self.maxVal = Int16.min
         
         for i in 0..<size {
             let r = rowFn(w, (h + i), size, prediction)
-            rows[i] = r
-            for v in r {
+            let offset = block.rowOffset(y: i)
+            for j in 0..<size {
+                block.data[offset + j] = r[j]
+                let v = r[j]
                 if v < minVal {
                     minVal = v
                 }
@@ -83,6 +85,6 @@ public struct Scale {
         }
         
         let localScale = baseShift
-        return (rows, localScale)
+        return (block, localScale)
     }
 }
