@@ -149,7 +149,7 @@ func yCbCrToCGImage(img: YCbCrImage) -> CGImage? {
 // MARK: - Main Entry Point
 
 let args = CommandLine.arguments
-var bitrate = 150
+var bitrate = 100
 var benchmarkMode = false
 var positionalArgs: [String] = []
 
