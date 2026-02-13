@@ -62,32 +62,32 @@ func transformBase(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) th
     rw.flush()
 }
 
-func transformLayerFunc(w: Int, h: Int, size: Int, scale: inout Scale, scaleVal: Int) throws -> (Data, Block2D) {
-    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scaleVal)
+func transformLayerFunc(w: Int, h: Int, size: Int, scale: Int) throws -> (Data, Block2D) {
+    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scale)
     
     // Need a fresh BitWriter for just this block
     let bw = BitWriter()
     var mutableRows = rows
     
-    let ll = try transformLayer(bw: bw, data: &mutableRows, size: size, scale: localScale)
+    let ll = try transformLayer(bw: bw, data: &mutableRows, size: size, scale: scale)
     
     return (bw.data, ll)
 }
 
-func transformBaseFunc(w: Int, h: Int, size: Int, scale: inout Scale, scaleVal: Int) throws -> Data {
-    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scaleVal)
+func transformBaseFunc(w: Int, h: Int, size: Int, scale: Int) throws -> Data {
+    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scale)
     
     let bw = BitWriter()
     var mutableRows = rows
     
-    try transformBase(bw: bw, data: &mutableRows, size: size, scale: localScale)
+    try transformBase(bw: bw, data: &mutableRows, size: size, scale: scale)
     
     let br = BitReader(data: bw.data)
     let planes = try invertBase(br: br, size: size)
     return bw.data
 }
 
-func encodeLayer(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int) throws -> (Data, Image16, Int) {
+func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16) {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -96,39 +96,32 @@ func encodeLayer(r: ImageReader, scaler: RateController, scaleVal: Int, size: In
     let dy = r.height
     
     var sub = Image16(width: (dx / 2), height: (dy / 2))
-    var currentScaleVal = scaleVal
     
     // Y
-    var scaleY = Scale(rowFn: r.rowY)
     for h in stride(from: 0, to: dy, by: size) {
         for w in stride(from: 0, to: dx, by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: &scaleY, scaleVal: currentScaleVal)
+            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
             bufY.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
             
             sub.updateY(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
         }
     }
     
     // Cb
-    var scaleCb = Scale(rowFn: r.rowCb)
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: &scaleCb, scaleVal: currentScaleVal)
+            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
             bufCb.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
             
             sub.updateCb(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
         }
     }
     
     // Cr
-    var scaleCr = Scale(rowFn: r.rowCr)
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: &scaleCr, scaleVal: currentScaleVal)
+            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
             bufCr.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
             
             sub.updateCr(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
         }
@@ -156,7 +149,7 @@ func encodeLayer(r: ImageReader, scaler: RateController, scaleVal: Int, size: In
         out.append(b)
     }
     
-    return (out, sub, currentScaleVal)
+    return (out, sub)
 }
 
 func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int) throws -> Data {
@@ -167,36 +160,27 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     let dx = r.width
     let dy = r.height
     
-    var currentScaleVal = scaleVal
-    
     // Y
-    var scaleY = Scale(rowFn: r.rowY)
-    
     for h in stride(from: 0, to: dy, by: size) {
         for w in stride(from: 0, to: dx, by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: &scaleY, scaleVal: currentScaleVal)
+            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
             bufY.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
         }
     }
     
     // Cb
-    var scaleCb = Scale(rowFn: r.rowCb)
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: &scaleCb, scaleVal: currentScaleVal)
+            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
             bufCb.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
         }
     }
     
     // Cr
-    var scaleCr = Scale(rowFn: r.rowCr)
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: &scaleCr, scaleVal: currentScaleVal)
+            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
             bufCr.append(data)
-            currentScaleVal = scaler.calcScale(addedBits: (data.count * 8), addedPixels: (size * size))
         }
     }
     
@@ -225,28 +209,26 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     return out
 }
 
+func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
+    let halfImg = img.Resize(0.5)
+
+    let r = ImageReader(img: halfImg)
+    let (_, sub2) = try encodeLayer(r: r, scale: 2, size: 32)
+
+}
+
 public func encode(img: YCbCrImage, maxbitrate: Int) throws -> Data {
-    let dx = img.width
-    let dy = img.height
-    
-    let l2 = ((dx * dy * 3) / 2)
-    let l1 = (((dx / 2) * (dy / 2) * 3) / 2)
-    let l0 = (((dx / 4) * (dy / 4) * 3) / 2)
-    let totalPixels = ((l2 + l1) + l0)
-    
-    let scaler = RateController(maxbit: maxbitrate, totalProcessPixels: totalPixels, baseShift: 2)
-    var scaleVal = 1
-    
+    let baseScale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+
+
     let r2 = ImageReader(img: img)
-    let (layer2, sub2, nextScale1) = try encodeLayer(r: r2, scaler: scaler, scaleVal: scaleVal, size: 32)
-    scaleVal = nextScale1
+    let (layer2, sub2) = try encodeLayer(r: r2, scale: scale, size: 32)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1, nextScale2) = try encodeLayer(r: r1, scaler: scaler, scaleVal: scaleVal, size: 16)
-    scaleVal = nextScale2
+    let (layer1, sub1) = try encodeLayer(r: r1, scale: scale, size: 16)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try encodeBase(r: r0, scaler: scaler, scaleVal: scaleVal, size: 8)
+    let layer0 = try encodeBase(r: r0, scale: scale, size: 8)
     
     var out = Data()
     
