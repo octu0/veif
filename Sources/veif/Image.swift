@@ -113,17 +113,17 @@ public struct ImageReader {
         self.height = img.height
     }
     
-    public func rowY(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+    public func rowY(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (px, py) = boundaryRepeat(width, height, (x + i), y)
             let offset = img.yOffset(px, py)
-            plane[i] = (Int16(img.yPlane[offset]) - prediction)
+            plane[i] = Int16(img.yPlane[offset])
         }
         return plane
     }
     
-    public func rowCb(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+    public func rowCb(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
@@ -138,12 +138,12 @@ public struct ImageReader {
             // If 4:4:4, we use full res coordinates (rPx, rPy) directly equivalent to cPx,cPy in 4:4:4 buffer
             
             let offset = img.cOffset(cPx, cPy)
-            plane[i] = (Int16(img.cbPlane[offset]) - prediction)
+            plane[i] = Int16(img.cbPlane[offset])
         }
         return plane
     }
     
-    public func rowCr(x: Int, y: Int, size: Int, prediction: Int16) -> [Int16] {
+    public func rowCr(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
@@ -156,107 +156,9 @@ public struct ImageReader {
             }
             
             let offset = img.cOffset(cPx, cPy)
-            plane[i] = (Int16(img.crPlane[offset]) - prediction)
+            plane[i] = Int16(img.crPlane[offset])
         }
         return plane
-    }
-}
-
-public class ImagePredictor: @unchecked Sendable {
-    public var img: YCbCrImage
-    public let width: Int
-    public let height: Int
-    
-    public init(width: Int, height: Int) {
-        self.img = YCbCrImage(width: width, height: height, ratio: .ratio420)
-        self.width = width
-        self.height = height
-    }
-    
-    public func updateY(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
-        for i in 0..<size {
-            if width <= (x + i) || height <= y {
-                continue
-            }
-            let offset = img.yOffset((x + i), y)
-            img.yPlane[offset] = clampU8(plane[i] + prediction)
-        }
-    }
-    
-    public func updateCb(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
-        for i in 0..<size {
-            let px = ((x + i) * 2)
-            let py = (y * 2)
-            if width <= px || height <= py {
-                continue
-            }
-            // COffset takes full res coords and downsamples
-            let cPx = (px / 2)
-            let cPy = (py / 2)
-            let offset = img.cOffset(cPx, cPy)
-            img.cbPlane[offset] = clampU8(plane[i] + prediction)
-        }
-    }
-    
-    public func updateCr(x: Int, y: Int, size: Int, plane: [Int16], prediction: Int16) {
-        for i in 0..<size {
-            let px = ((x + i) * 2)
-            let py = (y * 2)
-            if width <= px || height <= py {
-                continue
-            }
-            let cPx = (px / 2)
-            let cPy = (py / 2)
-            let offset = img.cOffset(cPx, cPy)
-            img.crPlane[offset] = clampU8(plane[i] + prediction)
-        }
-    }
-    
-    public func predictY(x: Int, y: Int, size: Int) -> Int16 {
-        return predictDC(data: img.yPlane, stride: img.yStride, offset: img.yOffset(x, y), x: x, y: y, size: size)
-    }
-    
-    public func predictCb(x: Int, y: Int, size: Int) -> Int16 {
-        let cPx = x 
-        let cPy = y 
-        return predictDC(data: img.cbPlane, stride: img.cStride, offset: img.cOffset(cPx, cPy), x: x, y: y, size: size)
-    }
-    
-    public func predictCr(x: Int, y: Int, size: Int) -> Int16 {
-        let cPx = x
-        let cPy = y
-        return predictDC(data: img.crPlane, stride: img.cStride, offset: img.cOffset(cPx, cPy), x: x, y: y, size: size)
-    }
-    
-    private func predictDC(data: [UInt8], stride: Int, offset: Int, x: Int, y: Int, size: Int) -> Int16 {
-        var sum = 0
-        var count = 0
-        
-        if 0 < y {
-            let topStart = (offset - stride)
-            for i in 0..<size {
-                if (topStart + i) < data.count {
-                    sum += Int(data[topStart + i])
-                    count += 1
-                }
-            }
-        }
-        
-        if 0 < x {
-            let leftStart = (offset - 1)
-            for i in 0..<size {
-                let idx = (leftStart + (i * stride))
-                if idx < data.count {
-                    sum += Int(data[idx])
-                    count += 1
-                }
-            }
-        }
-        
-        if count == 0 {
-            return 128
-        }
-        return Int16(sum / count)
     }
 }
 
@@ -275,40 +177,40 @@ public struct Image16: Sendable {
         self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
     }
     
-    public func getY(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+    public func getY(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
-                block[h, w] = self.y[py][px] - prediction
+                block[h, w] = self.y[py][px]
             }
         }
         return block
     }
     
-    public func getCb(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+    public func getCb(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                block[h, w] = self.cb[py][px] - prediction
+                block[h, w] = self.cb[py][px]
             }
         }
         return block
     }
     
-    public func getCr(x: Int, y: Int, size: Int, prediction: Int16) -> Block2D {
+    public func getCr(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                block[h, w] = self.cr[py][px] - prediction
+                block[h, w] = self.cr[py][px]
             }
         }
         return block
     }
     
-    public mutating func updateY(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateY(data: Block2D, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if height <= (startY + h) {
                 continue
@@ -317,12 +219,12 @@ public struct Image16: Sendable {
                 if width <= (startX + w) {
                     continue
                 }
-                self.y[startY + h][startX + w] = (data[h, w] + prediction)
+                self.y[startY + h][startX + w] = data[h, w]
             }
         }
     }
     
-    public mutating func updateCb(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCb(data: Block2D, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if (height / 2) <= (startY + h) {
                 continue
@@ -331,12 +233,12 @@ public struct Image16: Sendable {
                 if (width / 2) <= (startX + w) {
                     continue
                 }
-                self.cb[startY + h][startX + w] = (data[h, w] + prediction)
+                self.cb[startY + h][startX + w] = data[h, w]
             }
         }
     }
     
-    public mutating func updateCr(data: Block2D, prediction: Int16, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCr(data: Block2D, startX: Int, startY: Int, size: Int) {
         for h in 0..<size {
             if (height / 2) <= (startY + h) {
                 continue
@@ -345,7 +247,7 @@ public struct Image16: Sendable {
                 if (width / 2) <= (startX + w) {
                     continue
                 }
-                self.cr[startY + h][startX + w] = (data[h, w] + prediction)
+                self.cr[startY + h][startX + w] = data[h, w]
             }
         }
     }

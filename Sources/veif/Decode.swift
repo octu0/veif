@@ -32,7 +32,7 @@ func invertLayer(br: BitReader, ll: Block2D, size: Int) throws -> Block2D {
     return invDwt2d(sub)
 }
 
-func invertFull(br: BitReader, size: Int) throws -> Block2D {
+func invertBase(br: BitReader, size: Int) throws -> Block2D {
     let scaleU8 = try br.readBits(n: 8)
     let scale = Int(scaleU8)
     
@@ -52,32 +52,17 @@ func invertFull(br: BitReader, size: Int) throws -> Block2D {
     return invDwt2d(sub)
 }
 
-public typealias SetRowFunc = (_ x: Int, _ y: Int, _ size: Int, _ plane: [Int16], _ prediction: Int16) -> Void
-public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int16) -> Block2D
+public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int) -> Block2D
 
-func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc, getLL: GetLLFunc) throws -> (Block2D, Int16) {
-    let prediction = predict(w, h, size)
-    let ll = getLL(w/2, h/2, size/2, prediction)
+func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, getLL: GetLLFunc) throws -> Block2D {
+    let ll = getLL(w/2, h/2, size/2)
     let planes = try invertLayer(br: br, ll: ll, size: size)
-    
-    for i in 0..<size {
-        let offset = planes.rowOffset(y: i)
-        let row = Array(planes.data[offset..<(offset + size)])
-        setRow(w, (h + i), size, row, prediction)
-    }
-    return (planes, prediction)
+    return planes
 }
 
-func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, predict: PredictFunc, setRow: SetRowFunc) throws -> (Block2D, Int16) {
-    let prediction = predict(w, h, size)
-    let planes = try invertFull(br: br, size: size)
-    
-    for i in 0..<size {
-        let offset = planes.rowOffset(y: i)
-        let row = Array(planes.data[offset..<(offset + size)])
-        setRow(w, (h + i), size, row, prediction)
-    }
-    return (planes, prediction)
+func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int) throws -> Block2D {
+    let planes = try invertBase(br: br, size: size)
+    return planes
 }
 
 func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
@@ -120,7 +105,6 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
     }
     
     var sub = Image16(width: dx, height: dy)
-    let tmp = ImagePredictor(width: dx, height: dy)
     
     // Y
     for h in stride(from: 0, to: dy, by: size) {
@@ -129,8 +113,8 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = yBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictY, setRow: tmp.updateY, getLL: prev.getY)
-            sub.updateY(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getY)
+            sub.updateY(data: ll, startX: w, startY: h, size: size)
         }
     }
     
@@ -141,8 +125,8 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb, getLL: prev.getCb)
-            sub.updateCb(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getCb)
+            sub.updateCb(data: ll, startX: w, startY: h, size: size)
         }
     }
     
@@ -153,8 +137,8 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = crBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertLayerFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCr, setRow: tmp.updateCr, getLL: prev.getCr)
-            sub.updateCr(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getCr)
+            sub.updateCr(data: ll, startX: w, startY: h, size: size)
         }
     }
     
@@ -201,7 +185,6 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
     }
     
     var sub = Image16(width: dx, height: dy)
-    let tmp = ImagePredictor(width: dx, height: dy)
     
     // Y
     for h in stride(from: 0, to: dy, by: size) {
@@ -210,8 +193,8 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = yBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertBaseFunc(br: br, w: w, h: h, size: size, predict: tmp.predictY, setRow: tmp.updateY)
-            sub.updateY(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            sub.updateY(data: ll, startX: w, startY: h, size: size)
         }
     }
     
@@ -222,8 +205,8 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertBaseFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCb, setRow: tmp.updateCb)
-            sub.updateCb(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            sub.updateCb(data: ll, startX: w, startY: h, size: size)
         }
     }
     
@@ -234,8 +217,8 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = crBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let (ll, prediction) = try invertBaseFunc(br: br, w: w, h: h, size: size, predict: tmp.predictCr, setRow: tmp.updateCr)
-            sub.updateCr(data: ll, prediction: prediction, startX: w, startY: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            sub.updateCr(data: ll, startX: w, startY: h, size: size)
         }
     }
     

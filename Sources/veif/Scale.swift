@@ -51,7 +51,7 @@ public class RateController {
     }
 }
 
-public typealias RowFunc = (_ x: Int, _ y: Int, _ size: Int, _ prediction: Int16) -> [Int16]
+public typealias RowFunc = (_ x: Int, _ y: Int, _ size: Int) -> [Int16]
 
 public struct Scale {
     public var minVal: Int16
@@ -64,13 +64,13 @@ public struct Scale {
         self.rowFn = rowFn
     }
     
-    public mutating func rows(w: Int, h: Int, size: Int, prediction: Int16, baseShift: Int) -> (Block2D, Int) {
+    public mutating func rows(w: Int, h: Int, size: Int, baseShift: Int) -> (Block2D, Int) {
         var block = Block2D(width: size, height: size)
         self.minVal = Int16.max
         self.maxVal = Int16.min
         
         for i in 0..<size {
-            let r = rowFn(w, (h + i), size, prediction)
+            let r = rowFn(w, (h + i), size)
             let offset = block.rowOffset(y: i)
             for j in 0..<size {
                 block.data[offset + j] = r[j]
