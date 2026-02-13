@@ -14,6 +14,16 @@ func blockEncode(rw: RiceWriter, block: Block2D, size: Int) {
     }
 }
 
+func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
+    var prevVal: Int16 = 0
+    for i in 0..<(size * size) {
+        let val = block.data[i]
+        let diff = val - prevVal
+        rw.write(val: toUint16Encode(diff), k: k)
+        prevVal = val
+    }
+}
+
 func transformLayer(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) throws -> Block2D {
     var sub = dwt2d(&data, size: size)
     
@@ -45,7 +55,7 @@ func transformBase(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) th
     bw.data.append(UInt8(scale))
     
     let rw = RiceWriter(bw: bw)
-    blockEncode(rw: rw, block: sub.ll, size: sub.size)
+    blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
     blockEncode(rw: rw, block: sub.lh, size: sub.size)
     blockEncode(rw: rw, block: sub.hh, size: sub.size)

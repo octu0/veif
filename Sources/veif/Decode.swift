@@ -14,6 +14,25 @@ func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
     return block
 }
 
+func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
+    var block = Block2D(width: size, height: size)
+    var prevVal: Int16 = 0
+
+    for y in 0..<size {
+        let offset = block.rowOffset(y: y)
+        for x in 0..<size {
+            let v = try rr.read(k: k)
+            let diff = toInt16(v)
+
+            let val = diff + prevVal
+            block.data[offset + x] = val
+
+            prevVal = val
+        }
+    }
+    return block
+}
+
 func invertLayer(br: BitReader, ll: Block2D, size: Int) throws -> Block2D {
     let scaleU8 = try br.readBits(n: 8)
     let scale = Int(scaleU8)
@@ -38,7 +57,7 @@ func invertBase(br: BitReader, size: Int) throws -> Block2D {
     
     let rr = RiceReader(br: br)
     
-    var ll = try blockDecode(rr: rr, size: (size / 2))
+    var ll = try blockDecodeDPCM(rr: rr, size: (size / 2))
     var hl = try blockDecode(rr: rr, size: (size / 2))
     var lh = try blockDecode(rr: rr, size: (size / 2))
     var hh = try blockDecode(rr: rr, size: (size / 2))
