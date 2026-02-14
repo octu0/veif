@@ -54,12 +54,12 @@ func clampU8(_ v: Int16) -> UInt8 {
 
 // MARK: - Image Structures
 
-public enum YCbCrRatio {
+public enum YCbCrRatio: Sendable {
     case ratio420
     case ratio444
 }
 
-public struct YCbCrImage {
+public struct YCbCrImage: Sendable {
     public var yPlane: [UInt8]
     public var cbPlane: [UInt8]
     public var crPlane: [UInt8]
@@ -189,7 +189,7 @@ public struct YCbCrImage {
 
 public typealias RowFunc = (_ x: Int, _ y: Int, _ size: Int) -> [Int16]
 
-public struct ImageReader {
+public struct ImageReader: Sendable {
     public let img: YCbCrImage
     public let width: Int
     public let height: Int

@@ -60,10 +60,7 @@ func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) th
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
         let row = rows(w, (h + i), size)
-        let offset = block.rowOffset(y: i)
-        for j in 0..<size {
-            block.data[offset + j] = row[j]
-        }
+        block.setRow(offsetY: i, size: size, row: row)
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
@@ -76,10 +73,7 @@ func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) thr
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
         let row = rows(w, (h + i), size)
-        let offset = block.rowOffset(y: i)
-        for j in 0..<size {
-            block.data[offset + j] = row[j]
-        }
+        block.setRow(offsetY: i, size: size, row: row)
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
@@ -88,7 +82,7 @@ func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) thr
     return data as Data
 }
 
-func encodeLayer(r: ImageReader, size: Int, scale: Int) throws -> (Data, Image16) {
+func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, Image16) {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -99,32 +93,83 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) throws -> (Data, Image16
     var sub = Image16(width: (dx / 2), height: (dy / 2))
     
     // Y
-    for h in stride(from: 0, to: dy, by: size) {
-        for w in stride(from: 0, to: dx, by: size) {
-            let (data, ll) = try transformLayerFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
-            bufY.append(data)
-            
-            sub.updateY(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+    try await withThrowingTaskGroup(of: (Int, [(Data, Block2D, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: dy, by: size) {
+            group.addTask {
+                var rowResults: [(Data, Block2D, Int, Int)] = []
+                for w in stride(from: 0, to: dx, by: size) {
+                    let (data, ll) = try transformLayerFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, ll, w, h) in rowBlocks {
+                bufY.append(data)
+                sub.updateY(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+            }
         }
     }
     
     // Cb
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
-            bufCb.append(data)
-            
-            sub.updateCb(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+    try await withThrowingTaskGroup(of: (Int, [(Data, Block2D, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Block2D, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, ll, w, h) in rowBlocks {
+                bufCb.append(data)
+                sub.updateCb(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+            }
         }
     }
     
     // Cr
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
-            bufCr.append(data)
-            
-            sub.updateCr(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+    try await withThrowingTaskGroup(of: (Int, [(Data, Block2D, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Block2D, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, ll, w, h) in rowBlocks {
+                bufCr.append(data)
+                sub.updateCr(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+            }
         }
     }
     
@@ -154,7 +199,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) throws -> (Data, Image16
     return (out, sub)
 }
 
-func encodeBase(r: ImageReader, size: Int, scale: Int) throws -> Data {
+func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -163,26 +208,80 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) throws -> Data {
     let dy = r.height
     
     // Y
-    for h in stride(from: 0, to: dy, by: size) {
-        for w in stride(from: 0, to: dx, by: size) {
-            let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
-            bufY.append(data)
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: dy, by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: dx, by: size) {
+                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufY.append(data)
+            }
         }
     }
     
     // Cb
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
-            bufCb.append(data)
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCb.append(data)
+            }
         }
     }
     
     // Cr
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
-            bufCr.append(data)
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCr.append(data)
+            }
         }
     }
     
@@ -236,9 +335,8 @@ func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
         // Y
         var block = Block2D(width: w, height: h)
         for i in 0..<h {
-            for j in 0..<w {
-                block.data[block.rowOffset(y: i) + j] = r.rowY(x: sx + j, y: sy + i, size: w)[0]
-            }
+            let row = r.rowY(x: sx, y: sy + i, size: w)
+            block.setRow(offsetY: i, size: w, row: row)
         }
         
         let data = NSMutableData(capacity: w * h) ?? NSMutableData()
@@ -249,9 +347,8 @@ func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
         // Cb
         var blockCb = Block2D(width: w, height: h)
         for i in 0..<h {
-            for j in 0..<w {
-                blockCb.data[blockCb.rowOffset(y: i) + j] = r.rowCb(x: sx + j, y: sy + i, size: w)[0]
-            }
+            let row = r.rowCb(x: sx, y: sy + i, size: w)
+            blockCb.setRow(offsetY: i, size: w, row: row)
         }
         try? transformBase(data: data, block: &blockCb, size: size, scale: baseScale)
         totalSize += data.length
@@ -259,9 +356,8 @@ func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
         // Cr
         var blockCr = Block2D(width: w, height: h)
         for i in 0..<h {
-            for j in 0..<w {
-                blockCr.data[blockCr.rowOffset(y: i) + j] = r.rowCr(x: sx + j, y: sy + i, size: w)[0]
-            }
+            let row = r.rowCr(x: sx, y: sy + i, size: w)
+            blockCr.setRow(offsetY: i, size: w, row: row)
         }
         try? transformBase(data: data, block: &blockCr, size: size, scale: baseScale)
         totalSize += data.length
@@ -295,17 +391,17 @@ func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
     return resultScale
 }
 
-public func encode(img: YCbCrImage, maxbitrate: Int) throws -> Data {
+public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
     let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try encodeLayer(r: r2, size: 32, scale: scale)
+    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, scale: scale)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try encodeLayer(r: r1, size: 16, scale: scale)
+    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, scale: scale)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try encodeBase(r: r0, size: 8, scale: scale)
+    let layer0 = try await encodeBase(r: r0, size: 8, scale: scale)
     
     var out = Data()
     

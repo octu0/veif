@@ -53,9 +53,6 @@ This approach eliminates the need for server-side resizing or re-compression. Th
   - Flatness detection using HH subband analysis
 - **Entropy Coding**: Zero-run Rice coding
   - RLE zero-run cap (maxVal=64) for stability
-- **Rate Control**: Progress-based CBR Rate Controller
-  - Shared `RateController` across all layers
-  - Dynamic `baseShift` adjustment via overshoot ratio against `targetBitsProgress`
 - **Multi-Resolution**: 3-layer structure — Layer0 (1/4) → Layer1 (1/2) → Layer2 (1/1)
 
 ## CLI Usage

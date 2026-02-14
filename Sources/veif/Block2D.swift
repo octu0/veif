@@ -24,4 +24,11 @@ public struct Block2D: Sendable {
     public func rowOffset(y: Int) -> Int {
         return (y * width)
     }
+
+    public mutating func setRow(offsetY: Int, size: Int, row: [Int16]) {
+        let offset = self.rowOffset(y: offsetY)
+        for i in 0..<size {
+            self.data[offset + i] = row[i]
+        }
+    }
 }

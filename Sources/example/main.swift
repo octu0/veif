@@ -6,7 +6,7 @@ import veif
 
 // MARK: - Benchmark
 
-func runBenchmark(srcURL: URL) {
+func runBenchmark(srcURL: URL) async {
     guard let data = try? Data(contentsOf: srcURL) else {
         fatalError("Failed to read src.png")
     }
@@ -32,7 +32,7 @@ func runBenchmark(srcURL: URL) {
 
     print("\n=== Custom Codec Comparison ===")
     for bitrate in stride(from: 100, through: 500, by: 100) {
-        runCustomCodecComparison(bitrate: bitrate, originImg: originImg, refMid: refMid, refSmall: refSmall)
+        await runCustomCodecComparison(bitrate: bitrate, originImg: originImg, refMid: refMid, refSmall: refSmall)
     }
 }
 
@@ -62,10 +62,10 @@ func runJPEGComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage, refSmal
     printMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, l: l, m: m, s: s)
 }
 
-func runCustomCodecComparison(bitrate: Int, originImg: YCbCrImage, refMid: YCbCrImage, refSmall: YCbCrImage) {
+func runCustomCodecComparison(bitrate: Int, originImg: YCbCrImage, refMid: YCbCrImage, refSmall: YCbCrImage) async {
     let targetBits = (bitrate * 1000)
 
-    guard let out = try? encode(img: originImg, maxbitrate: targetBits) else {
+    guard let out = try? await encode(img: originImg, maxbitrate: targetBits) else {
         fatalError("Failed to encode")
     }
 
@@ -190,7 +190,7 @@ if FileManager.default.fileExists(atPath: outURL.path) != true {
 }
 
 if benchmarkMode == true {
-    runBenchmark(srcURL: srcURL)
+    await runBenchmark(srcURL: srcURL)
     exit(0)
 }
 
@@ -211,7 +211,7 @@ print(String(format: "target %d bit = %3.2f%%", maxbit, ((Double(maxbit) / Doubl
 
 let startTime = Date()
 // Ensure encode exists in veif and is accessible
-guard let out = try? encode(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
+guard let out = try? await encode(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
     print("Failed to encode")
     exit(1)
 }
