@@ -78,7 +78,7 @@ func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, scale: Int) throws
     return planes
 }
 
-func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
+func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
     var offset = 0
     
     func readUInt8() throws -> UInt8 {
@@ -128,45 +128,108 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
     var sub = Image16(width: dx, height: dy)
     
     // Y
-    for h in stride(from: 0, to: dy, by: size) {
-        for w in stride(from: 0, to: dx, by: size) {
-            guard yBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Y block"]) }
-            let data = yBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: dy, by: size) {
+            let wStride = Array(stride(from: 0, to: dx, by: size))
+            let rowBufs = Array(yBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getY)
-            sub.updateY(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getY)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateY(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     // Cb
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
-            let data = cbBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+            let rowBufs = Array(cbBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCb)
-            sub.updateCb(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCb)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateCb(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     // Cr
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            guard crBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cr block"]) }
-            let data = crBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+            let rowBufs = Array(crBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCr)
-            sub.updateCr(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCr)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateCr(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     return sub
 }
 
-func decodeBase(r: Data, size: Int) throws -> Image16 {
+func decodeBase(r: Data, size: Int) async throws -> Image16 {
     var offset = 0
     
     func readUInt8() throws -> UInt8 {
@@ -216,45 +279,108 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
     var sub = Image16(width: dx, height: dy)
     
     // Y
-    for h in stride(from: 0, to: dy, by: size) {
-        for w in stride(from: 0, to: dx, by: size) {
-            guard yBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Y block"]) }
-            let data = yBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: dy, by: size) {
+            let wStride = Array(stride(from: 0, to: dx, by: size))
+            let rowBufs = Array(yBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
-            sub.updateY(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateY(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     // Cb
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            guard cbBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cb block"]) }
-            let data = cbBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+            let rowBufs = Array(cbBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
-            sub.updateCb(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateCb(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     // Cr
-    for h in stride(from: 0, to: (dy / 2), by: size) {
-        for w in stride(from: 0, to: (dx / 2), by: size) {
-            guard crBufs.isEmpty != true else { throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "Missing Cr block"]) }
-            let data = crBufs.removeFirst()
-            let br = BitReader(data: data)
+    try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
+        var bufIndex = 0
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+            let rowBufs = Array(crBufs[bufIndex..<(bufIndex + wStride.count)])
+            bufIndex += wStride.count
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
-            sub.updateCr(data: ll, startX: w, startY: h, size: size)
+            group.addTask {
+                var rowResults: [(Block2D, Int, Int)] = []
+                for (i, w) in wStride.enumerated() {
+                    let data = rowBufs[i]
+                    let br = BitReader(data: data)
+                    let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
+                    rowResults.append((ll, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Block2D, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (ll, w, h) in rowBlocks {
+                sub.updateCr(data: ll, startX: w, startY: h, size: size)
+            }
         }
     }
     
     return sub
 }
 
-public func decode(r: Data) throws -> (YCbCrImage, YCbCrImage, YCbCrImage) {
+public func decode(r: Data) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage) {
     var offset = 0
     
     func readUInt32() throws -> UInt32 {
@@ -273,13 +399,13 @@ public func decode(r: Data) throws -> (YCbCrImage, YCbCrImage, YCbCrImage) {
     }
     
     let layer0Data = try readLayerData()
-    let layer0 = try decodeBase(r: layer0Data, size: 8)
+    let layer0 = try await decodeBase(r: layer0Data, size: 8)
     
     let layer1Data = try readLayerData()
-    let layer1 = try decodeLayer(r: layer1Data, prev: layer0, size: 16)
+    let layer1 = try await decodeLayer(r: layer1Data, prev: layer0, size: 16)
     
     let layer2Data = try readLayerData()
-    let layer2 = try decodeLayer(r: layer2Data, prev: layer1, size: 32)
+    let layer2 = try await decodeLayer(r: layer2Data, prev: layer1, size: 32)
     
     return (layer0.toYCbCr(), layer1.toYCbCr(), layer2.toYCbCr())
 }

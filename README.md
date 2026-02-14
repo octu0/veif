@@ -57,8 +57,16 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 ## CLI Usage
 
+encode/decode
+
 ```bash
-$ swift run -c release example ./docs/src.png /path/to/output/dir
+$ swift run -c release example -bitrate 100 ./docs/src.png /path/to/output/dir
+```
+
+benchmark
+
+```bash
+$ swift run -c release example -benchmark ./docs/src.png
 ```
 
 ## License

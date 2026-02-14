@@ -1,3 +1,5 @@
+import Foundation
+import Accelerate
 
 // MARK: - DWT Structures
 
@@ -11,10 +13,9 @@ public struct Subbands {
 
 // MARK: - LeGall 5/3 Lifting
 
-public func lift53(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+public func lift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     #if arch(arm64) || arch(x86_64)
-    let n = buffer.count
-    switch n {
+    switch count {
     case 8:
         lift53SIMD4(buffer, stride: stride)
     case 16:
@@ -22,17 +23,16 @@ public func lift53(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     case 32:
         lift53SIMD16(buffer, stride: stride)
     default:
-        lift53Scalar(buffer, stride: stride)
+        lift53Scalar(buffer, count: count, stride: stride)
     }
     #else
-    lift53Scalar(buffer, stride: stride)
+    lift53Scalar(buffer, count: count, stride: stride)
     #endif
 }
 
-public func invLift53(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+public func invLift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     #if arch(arm64) || arch(x86_64)
-    let n = buffer.count
-    switch n {
+    switch count {
     case 8:
         invLift53SIMD4(buffer, stride: stride)
     case 16:
@@ -40,18 +40,17 @@ public func invLift53(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) 
     case 32:
         invLift53SIMD16(buffer, stride: stride)
     default:
-        invLift53Scalar(buffer, stride: stride)
+        invLift53Scalar(buffer, count: count, stride: stride)
     }
     #else
-    invLift53Scalar(buffer, stride: stride)
+    invLift53Scalar(buffer, count: count, stride: stride)
     #endif
 }
 
 // MARK: - Lifting Scalar (fallback)
 
-private func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    let n = buffer.count
-    let half = (n / 2)
+private func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
+    let half = (count / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
     
@@ -88,9 +87,8 @@ private func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: I
     }
 }
 
-private func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    let n = buffer.count
-    let half = (n / 2)
+private func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
+    let half = (count / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
     
@@ -329,14 +327,15 @@ public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
         for y in 0..<size {
             let offset = (y * block.width)
             let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
-            lift53(rowBuffer, stride: 1)
+            lift53(rowBuffer, count: size, stride: 1)
         }
         
         // Vertical (stride = width)
         let width = block.width
+        let colCount = ((size - 1) * width) + 1
         for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: size)
-            lift53(colBuffer, stride: width)
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            lift53(colBuffer, count: size, stride: width)
         }
     }
     
@@ -406,16 +405,17 @@ public func invDwt2d(_ sub: Subbands) -> Block2D {
         let width = block.width
         
         // Vertical (stride = width)
+        let colCount = ((size - 1) * width) + 1
         for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: size)
-            invLift53(colBuffer, stride: width)
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            invLift53(colBuffer, count: size, stride: width)
         }
         
         // Horizontal (stride = 1)
         for y in 0..<size {
             let offset = (y * width)
             let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
-            invLift53(rowBuffer, stride: 1)
+            invLift53(rowBuffer, count: size, stride: 1)
         }
     }
     
