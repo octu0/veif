@@ -24,14 +24,14 @@ func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
     }
 }
 
-func transformLayer(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) throws -> Block2D {
+func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, scale: Int) throws -> Block2D {
     var sub = dwt2d(&block, size: size)
     
     quantizeMid(&sub.hl, size: sub.size, scale: scale)
     quantizeMid(&sub.lh, size: sub.size, scale: scale)
     quantizeHigh(&sub.hh, size: sub.size, scale: scale)
     
-    let rw = RiceWriter(bw: bw)
+    let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
     blockEncode(rw: rw, block: sub.lh, size: sub.size)
     blockEncode(rw: rw, block: sub.hh, size: sub.size)
@@ -40,7 +40,7 @@ func transformLayer(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) 
     return sub.ll
 }
 
-func transformBase(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) throws {
+func transformBase(data: NSMutableData, block: inout Block2D, size: Int, scale: Int) throws {
     var sub = dwt2d(&block, size: size)
     
     quantizeLow(&sub.ll, size: sub.size, scale: scale)
@@ -48,7 +48,7 @@ func transformBase(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) t
     quantizeMid(&sub.lh, size: sub.size, scale: scale)
     quantizeHigh(&sub.hh, size: sub.size, scale: scale)
     
-    let rw = RiceWriter(bw: bw)
+    let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
     blockEncode(rw: rw, block: sub.lh, size: sub.size)
@@ -66,11 +66,10 @@ func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) th
         }
     }
     
-    var data = Data(capacity: size * size)
-    let bw = BitWriter(data: &data)
-    let ll = try transformLayer(bw: bw, block: &block, size: size, scale: scale)
+    let data = NSMutableData(capacity: size * size) ?? NSMutableData()
+    let ll = try transformLayer(data: data, block: &block, size: size, scale: scale)
     
-    return (data, ll)
+    return (data as Data, ll)
 }
 
 func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) throws -> Data {
@@ -83,11 +82,10 @@ func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) thr
         }
     }
     
-    var data = Data(capacity: size * size)
-    let bw = BitWriter(data: &data)
-    try transformBase(bw: bw, block: &block, size: size, scale: scale)
+    let data = NSMutableData(capacity: size * size) ?? NSMutableData()
+    try transformBase(data: data, block: &block, size: size, scale: scale)
     
-    return data
+    return data as Data
 }
 
 func encodeLayer(r: ImageReader, size: Int, scale: Int) throws -> (Data, Image16) {

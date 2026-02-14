@@ -15,11 +15,11 @@ public func toInt16(_ u: UInt16) -> Int16 {
 // MARK: - BitWriter
 
 public class BitWriter {
-    private var data: Data
+    public let data: NSMutableData
     private var cache: UInt8
     private var bits: UInt8
     
-    public init(data: inout Data) {
+    public init(data: NSMutableData) {
         self.data = data
         self.cache = 0
         self.bits = 0
@@ -31,7 +31,8 @@ public class BitWriter {
         }
         bits += 1
         if bits == 8 {
-            data.append(cache)
+            var b = cache
+            data.append(&b, length: 1)
             bits = 0
             cache = 0
         }
@@ -46,7 +47,8 @@ public class BitWriter {
     
     public func flush() {
         if 0 < bits {
-            data.append(cache)
+            var b = cache
+            data.append(&b, length: 1)
             bits = 0
             cache = 0
         }
