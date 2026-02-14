@@ -78,11 +78,11 @@ struct DWTTests {
                  block[y, x] = Int16((y * size + x))
              }
         }
-        let original = block
+        let originalData = block.data
         
         let sub = dwt2d(&block, size: size)
         let restored = invDwt2d(sub)
         
-        #expect(restored.data == original.data, "2D DWT ラウンドトリップ失敗")
+        #expect(restored.data == originalData, "2D DWT ラウンドトリップ失敗")
     }
 }

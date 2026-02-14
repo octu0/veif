@@ -127,9 +127,7 @@ private func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count:
 
 // MARK: - Lifting SIMD
 
-#if arch(arm64) || arch(x86_64)
-
-private func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 8, half = 4
     
     // Split
@@ -152,7 +150,7 @@ private func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: In
     buffer[4 * stride] = high[0]; buffer[5 * stride] = high[1]; buffer[6 * stride] = high[2]; buffer[7 * stride] = high[3]
 }
 
-private func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 16, half = 8
     
     // Split
@@ -181,7 +179,7 @@ private func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: In
     buffer[12 * stride] = high[4]; buffer[13 * stride] = high[5]; buffer[14 * stride] = high[6]; buffer[15 * stride] = high[7]
 }
 
-private func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 32, half = 16
     
     // Split
@@ -219,7 +217,7 @@ private func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: I
     }
 }
 
-private func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 8, half = 4
     
     // Split
@@ -244,7 +242,7 @@ private func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride:
     buffer[6 * stride] = low[3]; buffer[7 * stride] = high[3]
 }
 
-private func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 16, half = 8
     
     // Split
@@ -277,7 +275,7 @@ private func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride:
     buffer[14 * stride] = low[7]; buffer[15 * stride] = high[7]
 }
 
-private func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
+func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 32, half = 16
     
     // Split
@@ -315,11 +313,195 @@ private func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride
     }
 }
 
-#endif
+// MARK: - Specialized 2D DWT
+
+func dwt2dSIMD4(_ block: inout Block2D) -> Subbands {
+    let size = 8
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            lift53SIMD4(rowBuffer, stride: 1)
+        }
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            lift53SIMD4(colBuffer, stride: width)
+        }
+    }
+    return splitSubbands(&block, size: size)
+}
+
+func dwt2dSIMD8(_ block: inout Block2D) -> Subbands {
+    let size = 16
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            lift53SIMD8(rowBuffer, stride: 1)
+        }
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            lift53SIMD8(colBuffer, stride: width)
+        }
+    }
+    return splitSubbands(&block, size: size)
+}
+
+func dwt2dSIMD16(_ block: inout Block2D) -> Subbands {
+    let size = 32
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            lift53SIMD16(rowBuffer, stride: 1)
+        }
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            lift53SIMD16(colBuffer, stride: width)
+        }
+    }
+    return splitSubbands(&block, size: size)
+}
+
+func invDwt2dSIMD4(_ sub: Subbands) -> Block2D {
+    let size = 8
+    let block = mergeSubbands(sub, size: size)
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            invLift53SIMD4(colBuffer, stride: width)
+        }
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            invLift53SIMD4(rowBuffer, stride: 1)
+        }
+    }
+    return block
+}
+
+func invDwt2dSIMD8(_ sub: Subbands) -> Block2D {
+    let size = 16
+    let block = mergeSubbands(sub, size: size)
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            invLift53SIMD8(colBuffer, stride: width)
+        }
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            invLift53SIMD8(rowBuffer, stride: 1)
+        }
+    }
+    return block
+}
+
+func invDwt2dSIMD16(_ sub: Subbands) -> Block2D {
+    let size = 32
+    let block = mergeSubbands(sub, size: size)
+    block.data.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        let width = block.width
+        let colCount = ((size - 1) * width) + 1
+        for x in 0..<size {
+            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+            invLift53SIMD16(colBuffer, stride: width)
+        }
+        for y in 0..<size {
+            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+            invLift53SIMD16(rowBuffer, stride: 1)
+        }
+    }
+    return block
+}
+
+private func splitSubbands(_ block: inout Block2D, size: Int) -> Subbands {
+    let half = size / 2
+    let sub = Subbands(
+        ll: Block2D(width: half, height: half),
+        hl: Block2D(width: half, height: half),
+        lh: Block2D(width: half, height: half),
+        hh: Block2D(width: half, height: half),
+        size: half
+    )
+    for y in 0..<half {
+        for x in 0..<size {
+            let val = block[y, x]
+            if x < half {
+                sub.ll[y, x] = val
+            } else {
+                sub.hl[y, x - half] = val
+            }
+        }
+    }
+    for y in half..<size {
+        for x in 0..<size {
+            let val = block[y, x]
+            if x < half {
+                sub.lh[y - half, x] = val
+            } else {
+                sub.hh[y - half, x - half] = val
+            }
+        }
+    }
+    return sub
+}
+
+private func mergeSubbands(_ sub: Subbands, size: Int) -> Block2D {
+    let half = sub.size
+    let block = Block2D(width: size, height: size)
+    for y in 0..<half {
+        for x in 0..<size {
+            if x < half {
+                block[y, x] = sub.ll[y, x]
+            } else {
+                block[y, x] = sub.hl[y, x - half]
+            }
+        }
+    }
+    for y in half..<size {
+        for x in 0..<size {
+            if x < half {
+                block[y, x] = sub.lh[y - half, x]
+            } else {
+                block[y, x] = sub.hh[y - half, x - half]
+            }
+        }
+    }
+    return block
+}
 
 // MARK: - 2D DWT
 
 public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
+    #if arch(arm64) || arch(x86_64)
+    switch size {
+    case 8:
+        return dwt2dSIMD4(&block)
+    case 16:
+        return dwt2dSIMD8(&block)
+    case 32:
+        return dwt2dSIMD16(&block)
+    default:
+        return dwt2dScalar(&block, size: size)
+    }
+    #else
+    return dwt2dScalar(&block, size: size)
+    #endif
+}
+
+private func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
     block.data.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }
         
@@ -339,66 +521,30 @@ public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
         }
     }
     
-    let half = ((size + 1) / 2)
-    
-    let sub = Subbands(
-        ll: Block2D(width: half, height: half),
-        hl: Block2D(width: half, height: half),
-        lh: Block2D(width: half, height: half),
-        hh: Block2D(width: half, height: half),
-        size: half
-    )
-    
-    for y in 0..<half {
-        for x in 0..<size {
-            let val = block[y, x]
-            if x < half {
-                sub.ll[y, x] = val // Top-Left
-            } else {
-                sub.hl[y, x - half] = val // Top-Right
-            }
-        }
-    }
-    
-    for y in half..<size {
-        for x in 0..<size {
-            let val = block[y, x]
-            if x < half {
-                sub.lh[y - half, x] = val // Bottom-Left
-            } else {
-                sub.hh[y - half, x - half] = val // Bottom-Right
-            }
-        }
-    }
-    
-    return sub
+    return splitSubbands(&block, size: size)
 }
 
 public func invDwt2d(_ sub: Subbands) -> Block2D {
-    let half = sub.size
     let size = (sub.size * 2)
-    
-    let block = Block2D(width: size, height: size)
-    
-    for y in 0..<half {
-        for x in 0..<size {
-            if x < half {
-                block[y, x] = sub.ll[y, x]
-            } else {
-                block[y, x] = sub.hl[y, x - half]
-            }
-        }
+    #if arch(arm64) || arch(x86_64)
+    switch size {
+    case 8:
+        return invDwt2dSIMD4(sub)
+    case 16:
+        return invDwt2dSIMD8(sub)
+    case 32:
+        return invDwt2dSIMD16(sub)
+    default:
+        return invDwt2dScalar(sub)
     }
-    
-    for y in half..<size {
-        for x in 0..<size {
-            if x < half {
-                block[y, x] = sub.lh[y - half, x]
-            } else {
-                block[y, x] = sub.hh[y - half, x - half]
-            }
-        }
-    }
+    #else
+    return invDwt2dScalar(sub)
+    #endif
+}
+
+private func invDwt2dScalar(_ sub: Subbands) -> Block2D {
+    let size = (sub.size * 2)
+    let block = mergeSubbands(sub, size: size)
     
     block.data.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }
