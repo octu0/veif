@@ -42,9 +42,11 @@ func runJPEGComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage, refSmal
     let dstData = NSMutableData()
     guard let destination = CGImageDestinationCreateWithData(dstData as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else { return }
 
+    let start = CFAbsoluteTimeGetCurrent()
     let options = [kCGImageDestinationLossyCompressionQuality: (Double(q) / 100.0)] as CFDictionary
     CGImageDestinationAddImage(destination, cgImage, options)
     CGImageDestinationFinalize(destination)
+    let duration = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
 
     let encodedBytes = dstData as Data
     let sizeKB = (Double(encodedBytes.count) / 1024.0)
@@ -59,15 +61,17 @@ func runJPEGComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage, refSmal
     let m = calcMetrics(ref: refMid, target: jpgMid)
     let s = calcMetrics(ref: refSmall, target: jpgSmall)
 
-    printMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, l: l, m: m, s: s)
+    printMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, duration: duration, l: l, m: m, s: s)
 }
 
 func runCustomCodecComparison(bitrate: Int, originImg: YCbCrImage, refMid: YCbCrImage, refSmall: YCbCrImage) async {
     let targetBits = (bitrate * 1000)
 
+    let start = CFAbsoluteTimeGetCurrent()
     guard let out = try? await encode(img: originImg, maxbitrate: targetBits) else {
         fatalError("Failed to encode")
     }
+    let duration = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
 
     let sizeKB = (Double(out.count) / 1024.0)
 
@@ -79,14 +83,14 @@ func runCustomCodecComparison(bitrate: Int, originImg: YCbCrImage, refMid: YCbCr
     let m = calcMetrics(ref: refMid, target: decMid)
     let s = calcMetrics(ref: refSmall, target: decSmall)
 
-    printMetrics(prefix: "MY   Rate", val: bitrate, sizeKB: sizeKB, l: l, m: m, s: s)
+    printMetrics(prefix: "MY   Rate", val: bitrate, sizeKB: sizeKB, duration: duration, l: l, m: m, s: s)
 }
 
-func printMetrics(prefix: String, val: Int, sizeKB: Double, l: BenchmarkMetrics, m: BenchmarkMetrics, s: BenchmarkMetrics) {
+func printMetrics(prefix: String, val: Int, sizeKB: Double, duration: Double, l: BenchmarkMetrics, m: BenchmarkMetrics, s: BenchmarkMetrics) {
     if prefix == "JPEG Q" {
-        print(String(format: "%@=%3d Size=%6.2fKB", prefix, val, sizeKB))
+        print(String(format: "%@=%3d Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
     } else {
-        print(String(format: "%@=%4d k Size=%6.2fKB", prefix, val, sizeKB))
+        print(String(format: "%@=%4d k Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
     }
 
     printLayerMetric(label: "L", m: l)
