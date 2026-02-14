@@ -15,12 +15,12 @@ public func toInt16(_ u: UInt16) -> Int16 {
 // MARK: - BitWriter
 
 public class BitWriter {
-    public var data: Data
+    private var data: Data
     private var cache: UInt8
     private var bits: UInt8
     
-    public init() {
-        self.data = Data()
+    public init(data: inout Data) {
+        self.data = data
         self.cache = 0
         self.bits = 0
     }

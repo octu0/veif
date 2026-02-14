@@ -33,10 +33,7 @@ func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
     return block
 }
 
-func invertLayer(br: BitReader, ll: Block2D, size: Int) throws -> Block2D {
-    let scaleU8 = try br.readBits(n: 8)
-    let scale = Int(scaleU8)
-    
+func invertLayer(br: BitReader, ll: Block2D, size: Int, scale: Int) throws -> Block2D {
     let rr = RiceReader(br: br)
     
     var hl = try blockDecode(rr: rr, size: (size / 2))
@@ -51,10 +48,7 @@ func invertLayer(br: BitReader, ll: Block2D, size: Int) throws -> Block2D {
     return invDwt2d(sub)
 }
 
-func invertBase(br: BitReader, size: Int) throws -> Block2D {
-    let scaleU8 = try br.readBits(n: 8)
-    let scale = Int(scaleU8)
-    
+func invertBase(br: BitReader, size: Int, scale: Int) throws -> Block2D {
     let rr = RiceReader(br: br)
     
     var ll = try blockDecodeDPCM(rr: rr, size: (size / 2))
@@ -73,19 +67,26 @@ func invertBase(br: BitReader, size: Int) throws -> Block2D {
 
 public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int) -> Block2D
 
-func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, getLL: GetLLFunc) throws -> Block2D {
+func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, scale: Int, getLL: GetLLFunc) throws -> Block2D {
     let ll = getLL(w/2, h/2, size/2)
-    let planes = try invertLayer(br: br, ll: ll, size: size)
+    let planes = try invertLayer(br: br, ll: ll, size: size, scale: scale)
     return planes
 }
 
-func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int) throws -> Block2D {
-    let planes = try invertBase(br: br, size: size)
+func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, scale: Int) throws -> Block2D {
+    let planes = try invertBase(br: br, size: size, scale: scale)
     return planes
 }
 
 func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
     var offset = 0
+    
+    func readUInt8() throws -> UInt8 {
+        guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
+        let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
+        offset += 1
+        return val
+    }
     
     func readUInt16() throws -> UInt16 {
         guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
@@ -104,6 +105,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
     
     let dx = Int(try readUInt16())
     let dy = Int(try readUInt16())
+    let scale = Int(try readUInt8())
     
     let bufYLen = Int(try readUInt16())
     var yBufs: [Data] = []
@@ -132,7 +134,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = yBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getY)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getY)
             sub.updateY(data: ll, startX: w, startY: h, size: size)
         }
     }
@@ -144,7 +146,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getCb)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCb)
             sub.updateCb(data: ll, startX: w, startY: h, size: size)
         }
     }
@@ -156,7 +158,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
             let data = crBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, getLL: prev.getCr)
+            let ll = try invertLayerFunc(br: br, w: w, h: h, size: size, scale: scale, getLL: prev.getCr)
             sub.updateCr(data: ll, startX: w, startY: h, size: size)
         }
     }
@@ -167,6 +169,13 @@ func decodeLayer(r: Data, prev: Image16, size: Int) throws -> Image16 {
 func decodeBase(r: Data, size: Int) throws -> Image16 {
     var offset = 0
     
+    func readUInt8() throws -> UInt8 {
+        guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
+        let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
+        offset += 1
+        return val
+    }
+    
     func readUInt16() throws -> UInt16 {
         guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
         let val = r.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
@@ -184,6 +193,7 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
     
     let dx = Int(try readUInt16())
     let dy = Int(try readUInt16())
+    let scale = Int(try readUInt8())
     
     let bufYLen = Int(try readUInt16())
     var yBufs: [Data] = []
@@ -212,7 +222,7 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = yBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
             sub.updateY(data: ll, startX: w, startY: h, size: size)
         }
     }
@@ -224,7 +234,7 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = cbBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
             sub.updateCb(data: ll, startX: w, startY: h, size: size)
         }
     }
@@ -236,7 +246,7 @@ func decodeBase(r: Data, size: Int) throws -> Image16 {
             let data = crBufs.removeFirst()
             let br = BitReader(data: data)
             
-            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size)
+            let ll = try invertBaseFunc(br: br, w: w, h: h, size: size, scale: scale)
             sub.updateCr(data: ll, startX: w, startY: h, size: size)
         }
     }

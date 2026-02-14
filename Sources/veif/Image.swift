@@ -114,7 +114,7 @@ public struct YCbCrImage {
         let newWidth = Int(Double(width) * factor)
         let newHeight = Int(Double(height) * factor)
 
-        guard 0< newWidth, 0 < newHeight else {
+        guard 0 < newWidth && 0 < newHeight else {
             return YCbCrImage(width: max(1, newWidth), height: max(1, newHeight), ratio: self.ratio)
         }
 
@@ -186,6 +186,8 @@ public struct YCbCrImage {
         }
     }
 }
+
+public typealias RowFunc = (_ x: Int, _ y: Int, _ size: Int) -> [Int16]
 
 public struct ImageReader {
     public let img: YCbCrImage

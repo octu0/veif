@@ -24,15 +24,12 @@ func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
     }
 }
 
-func transformLayer(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) throws -> Block2D {
-    var sub = dwt2d(&data, size: size)
+func transformLayer(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) throws -> Block2D {
+    var sub = dwt2d(&block, size: size)
     
     quantizeMid(&sub.hl, size: sub.size, scale: scale)
     quantizeMid(&sub.lh, size: sub.size, scale: scale)
     quantizeHigh(&sub.hh, size: sub.size, scale: scale)
-    
-    // Write scale
-    bw.data.append(UInt8(scale))
     
     let rw = RiceWriter(bw: bw)
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
@@ -43,16 +40,13 @@ func transformLayer(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) t
     return sub.ll
 }
 
-func transformBase(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) throws {
-    var sub = dwt2d(&data, size: size)
+func transformBase(bw: BitWriter, block: inout Block2D, size: Int, scale: Int) throws {
+    var sub = dwt2d(&block, size: size)
     
     quantizeLow(&sub.ll, size: sub.size, scale: scale)
     quantizeMid(&sub.hl, size: sub.size, scale: scale)
     quantizeMid(&sub.lh, size: sub.size, scale: scale)
     quantizeHigh(&sub.hh, size: sub.size, scale: scale)
-    
-    // Write scale
-    bw.data.append(UInt8(scale))
     
     let rw = RiceWriter(bw: bw)
     blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)
@@ -62,32 +56,41 @@ func transformBase(bw: BitWriter, data: inout Block2D, size: Int, scale: Int) th
     rw.flush()
 }
 
-func transformLayerFunc(w: Int, h: Int, size: Int, scale: Int) throws -> (Data, Block2D) {
-    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scale)
+func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) throws -> (Data, Block2D) {
+    var block = Block2D(width: size, height: size)
+    for i in 0..<size {
+        let row = rows(w, (h + i), size)
+        let offset = block.rowOffset(y: i)
+        for j in 0..<size {
+            block.data[offset + j] = row[j]
+        }
+    }
     
-    // Need a fresh BitWriter for just this block
-    let bw = BitWriter()
-    var mutableRows = rows
+    var data = Data(capacity: size * size)
+    let bw = BitWriter(data: &data)
+    let ll = try transformLayer(bw: bw, block: &block, size: size, scale: scale)
     
-    let ll = try transformLayer(bw: bw, data: &mutableRows, size: size, scale: scale)
-    
-    return (bw.data, ll)
+    return (data, ll)
 }
 
-func transformBaseFunc(w: Int, h: Int, size: Int, scale: Int) throws -> Data {
-    let (rows, localScale) = scale.rows(w: w, h: h, size: size, baseShift: scale)
+func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) throws -> Data {
+    var block = Block2D(width: size, height: size)
+    for i in 0..<size {
+        let row = rows(w, (h + i), size)
+        let offset = block.rowOffset(y: i)
+        for j in 0..<size {
+            block.data[offset + j] = row[j]
+        }
+    }
     
-    let bw = BitWriter()
-    var mutableRows = rows
+    var data = Data(capacity: size * size)
+    let bw = BitWriter(data: &data)
+    try transformBase(bw: bw, block: &block, size: size, scale: scale)
     
-    try transformBase(bw: bw, data: &mutableRows, size: size, scale: scale)
-    
-    let br = BitReader(data: bw.data)
-    let planes = try invertBase(br: br, size: size)
-    return bw.data
+    return data
 }
 
-func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16) {
+func encodeLayer(r: ImageReader, size: Int, scale: Int) throws -> (Data, Image16) {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -100,7 +103,7 @@ func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16
     // Y
     for h in stride(from: 0, to: dy, by: size) {
         for w in stride(from: 0, to: dx, by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
+            let (data, ll) = try transformLayerFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
             bufY.append(data)
             
             sub.updateY(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
@@ -110,7 +113,7 @@ func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16
     // Cb
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
+            let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
             bufCb.append(data)
             
             sub.updateCb(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
@@ -120,7 +123,7 @@ func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16
     // Cr
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let (data, ll) = try transformLayerFunc(w: w, h: h, size: size, scale: scale)
+            let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
             bufCr.append(data)
             
             sub.updateCr(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
@@ -130,6 +133,7 @@ func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16
     var out = Data()
     withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(scale).bigEndian) { out.append(contentsOf: $0) }
     
     withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
     for b in bufY {
@@ -152,7 +156,7 @@ func encodeLayer(r: ImageReader, scale: Int, size: Int) throws -> (Data, Image16
     return (out, sub)
 }
 
-func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int) throws -> Data {
+func encodeBase(r: ImageReader, size: Int, scale: Int) throws -> Data {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -163,7 +167,7 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     // Y
     for h in stride(from: 0, to: dy, by: size) {
         for w in stride(from: 0, to: dx, by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
+            let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
             bufY.append(data)
         }
     }
@@ -171,7 +175,7 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     // Cb
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
+            let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
             bufCb.append(data)
         }
     }
@@ -179,7 +183,7 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     // Cr
     for h in stride(from: 0, to: (dy / 2), by: size) {
         for w in stride(from: 0, to: (dx / 2), by: size) {
-            let data = try transformBaseFunc(w: w, h: h, size: size, scale: scale)
+            let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
             bufCr.append(data)
         }
     }
@@ -187,6 +191,7 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
     var out = Data()
     withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(scale).bigEndian) { out.append(contentsOf: $0) }
     
     withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
     for b in bufY {
@@ -210,25 +215,20 @@ func encodeBase(r: ImageReader, scaler: RateController, scaleVal: Int, size: Int
 }
 
 func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
-    let halfImg = img.Resize(0.5)
-
-    let r = ImageReader(img: halfImg)
-    let (_, sub2) = try encodeLayer(r: r, scale: 2, size: 32)
-
+    return 0
 }
 
 public func encode(img: YCbCrImage, maxbitrate: Int) throws -> Data {
     let baseScale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
 
-
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try encodeLayer(r: r2, scale: scale, size: 32)
+    let (layer2, sub2) = try encodeLayer(r: r2, size: 32, scale: baseScale)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try encodeLayer(r: r1, scale: scale, size: 16)
+    let (layer1, sub1) = try encodeLayer(r: r1, size: 16, scale: baseScale)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try encodeBase(r: r0, scale: scale, size: 8)
+    let layer0 = try encodeBase(r: r0, size: 8, scale: baseScale)
     
     var out = Data()
     
