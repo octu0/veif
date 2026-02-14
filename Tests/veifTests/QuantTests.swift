@@ -17,6 +17,24 @@ private func referenceQuantize(_ data: inout Block2D, size: Int, scale: Int) {
     }
 }
 
+/// スカラー版の quantize (SignedMapping版)
+private func referenceQuantizeSignedMapping(_ data: inout Block2D, size: Int, scale: Int) {
+    let total = (size * size)
+    for i in 0..<total {
+        let v = Int32(data.data[i])
+        let off = Int32(1 << (scale - 1))
+        var q: Int16
+        if 0 <= v {
+            q = Int16((v + off) >> scale)
+        } else {
+            q = Int16(-1 * ((-1 * v + off) >> scale))
+        }
+        
+        let u = UInt16(bitPattern: (q &<< 1) ^ (q >> 15))
+        data.data[i] = Int16(bitPattern: u)
+    }
+}
+
 /// スカラー版の dequantize を再実装（テスト用参照実装）
 private func referenceDequantize(_ data: inout Block2D, size: Int, scale: Int) {
     let total = (size * size)
@@ -25,10 +43,23 @@ private func referenceDequantize(_ data: inout Block2D, size: Int, scale: Int) {
     }
 }
 
+/// スカラー版の dequantize (SignedMapping版)
+private func referenceDequantizeSignedMapping(_ data: inout Block2D, size: Int, scale: Int) {
+    let total = (size * size)
+    for i in 0..<total {
+        let v = data.data[i]
+        let u = UInt16(bitPattern: v)
+        let s = Int16(bitPattern: (u >> 1))
+        let m = (-1 * Int16(bitPattern: (u & 1)))
+        let decoded = (s ^ m)
+        data.data[i] = (decoded &<< scale)
+    }
+}
+
 /// テスト用のブロックデータを生成する
 /// 正・負・ゼロを含むパターンを生成
 private func makeTestBlock(size: Int, seed: Int16) -> Block2D {
-    var block = Block2D(width: size, height: size)
+    let block = Block2D(width: size, height: size)
     for y in 0..<size {
         for x in 0..<size {
             let val = Int16(((y * size) + x)) &- seed
@@ -114,6 +145,30 @@ struct QuantizeSIMDTests {
 
         #expect(actual.data == expected.data, "size=\(size) データが一致しません")
     }
+
+    @Test("quantizeMid (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    func quantizeMidSignedMappingAllSizes(size: Int) {
+        let scale = 2
+        var actual = makeTestBlock(size: size, seed: Int16(size))
+        var expected = actual
+
+        quantizeMidSignedMapping(&actual, size: size, scale: scale)
+        referenceQuantizeSignedMapping(&expected, size: size, scale: (scale + 3))
+
+        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+    }
+
+    @Test("quantizeHigh (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    func quantizeHighSignedMappingAllSizes(size: Int) {
+        let scale = 2
+        var actual = makeTestBlock(size: size, seed: Int16(size))
+        var expected = actual
+
+        quantizeHighSignedMapping(&actual, size: size, scale: scale)
+        referenceQuantizeSignedMapping(&expected, size: size, scale: (scale + 5))
+
+        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+    }
 }
 
 // MARK: - dequantizeLow / dequantizeMid / dequantizeHigh のテスト
@@ -153,6 +208,30 @@ struct DequantizeSIMDTests {
 
         dequantizeHigh(&actual, size: size, scale: scale)
         referenceDequantize(&expected, size: size, scale: (scale + 5))
+
+        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+    }
+
+    @Test("dequantizeMid (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    func dequantizeMidSignedMappingAllSizes(size: Int) {
+        let scale = 2
+        var actual = makeTestBlock(size: size, seed: Int16(size / 2))
+        var expected = actual
+
+        dequantizeMidSignedMapping(&actual, size: size, scale: scale)
+        referenceDequantizeSignedMapping(&expected, size: size, scale: (scale + 3))
+
+        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+    }
+
+    @Test("dequantizeHigh (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    func dequantizeHighSignedMappingAllSizes(size: Int) {
+        let scale = 2
+        var actual = makeTestBlock(size: size, seed: Int16(size / 2))
+        var expected = actual
+
+        dequantizeHighSignedMapping(&actual, size: size, scale: scale)
+        referenceDequantizeSignedMapping(&expected, size: size, scale: (scale + 5))
 
         #expect(actual.data == expected.data, "size=\(size) データが一致しません")
     }

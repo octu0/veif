@@ -10,7 +10,7 @@ func toUint16Encode(_ n: Int16) -> UInt16 {
 
 func blockEncode(rw: RiceWriter, block: Block2D, size: Int) {
     for i in 0..<(size * size) {
-        rw.write(val: toUint16Encode(block.data[i]), k: k)
+        rw.write(val: UInt16(bitPattern: block.data[i]), k: k)
     }
 }
 
@@ -27,9 +27,9 @@ func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
 func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, scale: Int) throws -> Block2D {
     var sub = dwt2d(&block, size: size)
     
-    quantizeMid(&sub.hl, size: sub.size, scale: scale)
-    quantizeMid(&sub.lh, size: sub.size, scale: scale)
-    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    quantizeMidSignedMapping(&sub.hl, size: sub.size, scale: scale)
+    quantizeMidSignedMapping(&sub.lh, size: sub.size, scale: scale)
+    quantizeHighSignedMapping(&sub.hh, size: sub.size, scale: scale)
     
     let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
@@ -44,9 +44,9 @@ func transformBase(data: NSMutableData, block: inout Block2D, size: Int, scale: 
     var sub = dwt2d(&block, size: size)
     
     quantizeLow(&sub.ll, size: sub.size, scale: scale)
-    quantizeMid(&sub.hl, size: sub.size, scale: scale)
-    quantizeMid(&sub.lh, size: sub.size, scale: scale)
-    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    quantizeMidSignedMapping(&sub.hl, size: sub.size, scale: scale)
+    quantizeMidSignedMapping(&sub.lh, size: sub.size, scale: scale)
+    quantizeHighSignedMapping(&sub.hh, size: sub.size, scale: scale)
     
     let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)

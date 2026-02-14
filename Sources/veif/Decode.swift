@@ -4,11 +4,12 @@ import Foundation
 
 func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
     let block = Block2D(width: size, height: size)
-    for y in 0..<size {
-        let offset = block.rowOffset(y: y)
-        for x in 0..<size {
+    try block.data.withUnsafeMutableBufferPointer { buf in
+        guard var p = buf.baseAddress else { return }
+        for _ in 0..<(size * size) {
             let v = try rr.read(k: k)
-            block.data[offset + x] = toInt16(v)
+            p.pointee = Int16(bitPattern: v)
+            p += 1
         }
     }
     return block
@@ -18,14 +19,15 @@ func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
     let block = Block2D(width: size, height: size)
     var prevVal: Int16 = 0
 
-    for y in 0..<size {
-        let offset = block.rowOffset(y: y)
-        for x in 0..<size {
+    try block.data.withUnsafeMutableBufferPointer { buf in
+        guard var p = buf.baseAddress else { return }
+        for _ in 0..<(size * size) {
             let v = try rr.read(k: k)
             let diff = toInt16(v)
 
             let val = diff + prevVal
-            block.data[offset + x] = val
+            p.pointee = val
+            p += 1
 
             prevVal = val
         }
@@ -40,9 +42,9 @@ func invertLayer(br: BitReader, ll: Block2D, size: Int, scale: Int) throws -> Bl
     var lh = try blockDecode(rr: rr, size: (size / 2))
     var hh = try blockDecode(rr: rr, size: (size / 2))
     
-    dequantizeMid(&hl, size: (size / 2), scale: scale)
-    dequantizeMid(&lh, size: (size / 2), scale: scale)
-    dequantizeHigh(&hh, size: (size / 2), scale: scale)
+    dequantizeMidSignedMapping(&hl, size: (size / 2), scale: scale)
+    dequantizeMidSignedMapping(&lh, size: (size / 2), scale: scale)
+    dequantizeHighSignedMapping(&hh, size: (size / 2), scale: scale)
     
     let sub = Subbands(ll: ll, hl: hl, lh: lh, hh: hh, size: (size / 2))
     return invDwt2d(sub)
@@ -57,9 +59,9 @@ func invertBase(br: BitReader, size: Int, scale: Int) throws -> Block2D {
     var hh = try blockDecode(rr: rr, size: (size / 2))
     
     dequantizeLow(&ll, size: (size / 2), scale: scale)
-    dequantizeMid(&hl, size: (size / 2), scale: scale)
-    dequantizeMid(&lh, size: (size / 2), scale: scale)
-    dequantizeHigh(&hh, size: (size / 2), scale: scale)
+    dequantizeMidSignedMapping(&hl, size: (size / 2), scale: scale)
+    dequantizeMidSignedMapping(&lh, size: (size / 2), scale: scale)
+    dequantizeHighSignedMapping(&hh, size: (size / 2), scale: scale)
     
     let sub = Subbands(ll: ll, hl: hl, lh: lh, hh: hh, size: (size / 2))
     return invDwt2d(sub)
