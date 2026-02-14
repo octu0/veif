@@ -18,11 +18,15 @@ public class BitWriter {
     public let data: NSMutableData
     private var cache: UInt8
     private var bits: UInt8
+    private var buffer: [UInt8]
+    private let bufferSize = 4096
     
     public init(data: NSMutableData) {
         self.data = data
         self.cache = 0
         self.bits = 0
+        self.buffer = []
+        self.buffer.reserveCapacity(bufferSize)
     }
     
     public func writeBit(_ bit: UInt8) {
@@ -31,8 +35,13 @@ public class BitWriter {
         }
         bits += 1
         if bits == 8 {
-            var b = cache
-            data.append(&b, length: 1)
+            buffer.append(cache)
+            if buffer.count >= bufferSize {
+                buffer.withUnsafeBufferPointer { ptr in
+                    data.append(ptr.baseAddress!, length: ptr.count)
+                }
+                buffer.removeAll(keepingCapacity: true)
+            }
             bits = 0
             cache = 0
         }
@@ -47,10 +56,15 @@ public class BitWriter {
     
     public func flush() {
         if 0 < bits {
-            var b = cache
-            data.append(&b, length: 1)
+            buffer.append(cache)
             bits = 0
             cache = 0
+        }
+        if !buffer.isEmpty {
+            buffer.withUnsafeBufferPointer { ptr in
+                data.append(ptr.baseAddress!, length: ptr.count)
+            }
+            buffer.removeAll(keepingCapacity: true)
         }
     }
 }
@@ -126,17 +140,19 @@ public class BitReader {
     private var offset: Int
     private var cache: UInt8
     private var bits: UInt8
+    private let dataCount: Int
     
     public init(data: Data) {
         self.data = data
         self.offset = 0
         self.cache = 0
         self.bits = 0
+        self.dataCount = data.count
     }
     
     public func readBit() throws -> UInt8 {
         if bits == 0 {
-            if data.count <= offset {
+            if dataCount <= offset {
                 throw NSError(domain: "BitReaderErr", code: 1, userInfo: [NSLocalizedDescriptionKey: "EOF"])
             }
             cache = data[offset]

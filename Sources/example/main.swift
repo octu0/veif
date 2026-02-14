@@ -6,6 +6,7 @@ import veif
 let args = CommandLine.arguments
 var bitrate = 200
 var benchmarkMode = false
+var profileMode = false
 var positionalArgs: [String] = []
 
 var i = 1
@@ -22,6 +23,8 @@ while i < args.count {
         }
     case "-benchmark":
         benchmarkMode = true
+    case "-profile":
+        profileMode = true
     default:
         positionalArgs.append(arg)
     }
@@ -51,6 +54,16 @@ guard let data = try? Data(contentsOf: srcURL) else {
 guard let ycbcr = try? pngToYCbCr(data: data) else {
     print("Failed to decode \(srcURL.path)")
     exit(1)
+}
+
+if profileMode {
+    print("Profile mode: running 5000 iterations...")
+    for _ in 0..<5000 {
+        let out = try! await encode(img: ycbcr, maxbitrate: (bitrate * 1000))
+        _ = try! await decode(r: out)
+    }
+    print("Done.")
+    exit(0)
 }
 
 let srcbit = ((ycbcr.yPlane.count + ycbcr.cbPlane.count + ycbcr.crPlane.count) * 8)

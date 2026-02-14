@@ -435,23 +435,41 @@ private func splitSubbands(_ block: inout Block2D, size: Int) -> Subbands {
         hh: Block2D(width: half, height: half),
         size: half
     )
-    for y in 0..<half {
-        for x in 0..<size {
-            let val = block[y, x]
-            if x < half {
-                sub.ll[y, x] = val
-            } else {
-                sub.hl[y, x - half] = val
-            }
-        }
-    }
-    for y in half..<size {
-        for x in 0..<size {
-            let val = block[y, x]
-            if x < half {
-                sub.lh[y - half, x] = val
-            } else {
-                sub.hh[y - half, x - half] = val
+    
+    block.data.withUnsafeBufferPointer { blockPtr in
+        guard let bBase = blockPtr.baseAddress else { return }
+        
+        sub.ll.data.withUnsafeMutableBufferPointer { llPtr in
+            sub.hl.data.withUnsafeMutableBufferPointer { hlPtr in
+                sub.lh.data.withUnsafeMutableBufferPointer { lhPtr in
+                    sub.hh.data.withUnsafeMutableBufferPointer { hhPtr in
+                        guard let llBase = llPtr.baseAddress,
+                              let hlBase = hlPtr.baseAddress,
+                              let lhBase = lhPtr.baseAddress,
+                              let hhBase = hhPtr.baseAddress else { return }
+                        
+                        let bWidth = block.width
+                        let sWidth = half
+                        
+                        for y in 0..<half {
+                            let bRowOff = (y * bWidth)
+                            let sRowOff = (y * sWidth)
+                            
+                            // Top half (LL and HL)
+                            for x in 0..<half {
+                                llBase[sRowOff + x] = bBase[bRowOff + x]
+                                hlBase[sRowOff + x] = bBase[bRowOff + x + half]
+                            }
+                            
+                            // Bottom half (LH and HH)
+                            let bLowRowOff = ((y + half) * bWidth)
+                            for x in 0..<half {
+                                lhBase[sRowOff + x] = bBase[bLowRowOff + x]
+                                hhBase[sRowOff + x] = bBase[bLowRowOff + x + half]
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -461,21 +479,41 @@ private func splitSubbands(_ block: inout Block2D, size: Int) -> Subbands {
 private func mergeSubbands(_ sub: Subbands, size: Int) -> Block2D {
     let half = sub.size
     let block = Block2D(width: size, height: size)
-    for y in 0..<half {
-        for x in 0..<size {
-            if x < half {
-                block[y, x] = sub.ll[y, x]
-            } else {
-                block[y, x] = sub.hl[y, x - half]
-            }
-        }
-    }
-    for y in half..<size {
-        for x in 0..<size {
-            if x < half {
-                block[y, x] = sub.lh[y - half, x]
-            } else {
-                block[y, x] = sub.hh[y - half, x - half]
+    
+    block.data.withUnsafeMutableBufferPointer { blockPtr in
+        guard let bBase = blockPtr.baseAddress else { return }
+        
+        sub.ll.data.withUnsafeBufferPointer { llPtr in
+            sub.hl.data.withUnsafeBufferPointer { hlPtr in
+                sub.lh.data.withUnsafeBufferPointer { lhPtr in
+                    sub.hh.data.withUnsafeBufferPointer { hhPtr in
+                        guard let llBase = llPtr.baseAddress,
+                              let hlBase = hlPtr.baseAddress,
+                              let lhBase = lhPtr.baseAddress,
+                              let hhBase = hhPtr.baseAddress else { return }
+                        
+                        let bWidth = block.width
+                        let sWidth = half
+                        
+                        for y in 0..<half {
+                            let bRowOff = (y * bWidth)
+                            let sRowOff = (y * sWidth)
+                            
+                            // Top half (LL and HL)
+                            for x in 0..<half {
+                                bBase[bRowOff + x] = llBase[sRowOff + x]
+                                bBase[bRowOff + x + half] = hlBase[sRowOff + x]
+                            }
+                            
+                            // Bottom half (LH and HH)
+                            let bLowRowOff = ((y + half) * bWidth)
+                            for x in 0..<half {
+                                bBase[bLowRowOff + x] = lhBase[sRowOff + x]
+                                bBase[bLowRowOff + x + half] = hhBase[sRowOff + x]
+                            }
+                        }
+                    }
+                }
             }
         }
     }
