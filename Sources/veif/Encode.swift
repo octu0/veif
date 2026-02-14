@@ -213,20 +213,99 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) throws -> Data {
 }
 
 func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
-    return 0
+    // 8 points
+    let size = 8
+    let w = (img.width / size)
+    let h = (img.height / size)
+    let points: [(Int, Int)] = [
+        (0, 0),                                    // TL
+        ((img.width - w), 0),                      // TR
+        (0, (img.height - h)),                     // BL
+        ((img.width - w), (img.height - h)),       // BR
+        (((img.width - w) / 2), 0),                // TC
+        ((img.width - w), ((img.height - h) / 2)), // RC
+        (((img.width - w) / 2), (img.height - h)), // BC
+        (0, ((img.height - h) / 2)),               // LC
+    ]
+    
+    let baseScale = 1
+    var totalSize = 0
+    let r = ImageReader(img: img)
+    
+    for (sx, sy) in points {
+        // Y
+        var block = Block2D(width: w, height: h)
+        for i in 0..<h {
+            for j in 0..<w {
+                block.data[block.rowOffset(y: i) + j] = r.rowY(x: sx + j, y: sy + i, size: w)[0]
+            }
+        }
+        
+        let data = NSMutableData(capacity: w * h) ?? NSMutableData()
+        let _ = BitWriter(data: data)
+        try? transformBase(data: data, block: &block, size: size, scale: baseScale)
+        totalSize += data.length
+        
+        // Cb
+        var blockCb = Block2D(width: w, height: h)
+        for i in 0..<h {
+            for j in 0..<w {
+                blockCb.data[blockCb.rowOffset(y: i) + j] = r.rowCb(x: sx + j, y: sy + i, size: w)[0]
+            }
+        }
+        try? transformBase(data: data, block: &blockCb, size: size, scale: baseScale)
+        totalSize += data.length
+        
+        // Cr
+        var blockCr = Block2D(width: w, height: h)
+        for i in 0..<h {
+            for j in 0..<w {
+                blockCr.data[blockCr.rowOffset(y: i) + j] = r.rowCr(x: sx + j, y: sy + i, size: w)[0]
+            }
+        }
+        try? transformBase(data: data, block: &blockCr, size: size, scale: baseScale)
+        totalSize += data.length
+    }
+    
+    // Total Raw Size of sampled blocks (Y + Cb + Cr)
+    // 4:4:4 assumption for simplification in sampling (reading r.rowCb/Cr at same coordinates)
+    // Each pixel has Y, Cb, Cr components -> 3 bytes per pixel
+    // points.count * (w * h) * 3
+    let totalSampleRawSize = (points.count * (w * h) * 3)
+    
+    // Compression Ratio of samples (Encoded / Raw)
+    // Avoid division by zero
+    let compressionRatio = (Double(totalSize * 8) / Double(totalSampleRawSize * 8))
+
+    let totalImageRawBits = ((img.yPlane.count + img.cbPlane.count + img.crPlane.count) * 8)
+
+    let estimatedCurrentBitrate = (compressionRatio * Double(totalImageRawBits))
+    let adjustmentRatio = (estimatedCurrentBitrate / Double(targetBitrate))
+    
+    var resultScale: Int
+    if 1.0 < adjustmentRatio {
+        resultScale = Int((Double(baseScale) * adjustmentRatio) + 0.5)
+    } else {
+        resultScale = Int((Double(baseScale) * adjustmentRatio) + 0.5)
+    }
+    
+    if resultScale < 1 {
+        resultScale = 1
+    }
+    return resultScale
 }
 
 public func encode(img: YCbCrImage, maxbitrate: Int) throws -> Data {
-    let baseScale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+    let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try encodeLayer(r: r2, size: 32, scale: baseScale)
+    let (layer2, sub2) = try encodeLayer(r: r2, size: 32, scale: scale)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try encodeLayer(r: r1, size: 16, scale: baseScale)
+    let (layer1, sub1) = try encodeLayer(r: r1, size: 16, scale: scale)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try encodeBase(r: r0, size: 8, scale: baseScale)
+    let layer0 = try encodeBase(r: r0, size: 8, scale: scale)
     
     var out = Data()
     

@@ -1,16 +1,20 @@
 
 // MARK: - Quantization
 
+let quantizeLowOffset = 0
+let quantizeMidOffset = 1
+let quantizeHighOffset = 3
+
 public func quantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + 2))
+    quantize(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
 public func quantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + 3))
+    quantize(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
 public func quantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + 5))
+    quantize(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
 private func quantize(_ block: inout Block2D, size: Int, scale: Int) {
@@ -141,15 +145,15 @@ private func quantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
 // MARK: - Dequantization
 
 public func dequantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + 2))
+    dequantize(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
 public func dequantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + 3))
+    dequantize(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
 public func dequantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + 5))
+    dequantize(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
 private func dequantize(_ block: inout Block2D, size: Int, scale: Int) {

@@ -241,8 +241,8 @@ let originalSize = (ycbcr.yPlane.count + ycbcr.cbPlane.count + ycbcr.crPlane.cou
 let compressedSize = totalSize
 
 print(String(
-    format: "elapse=%.4fs %3.2fKB -> %3.2fKB compressed %3.2f%%",
-    elapsed,
+    format: "elapse=%.4fms %3.2fKB -> %3.2fKB compressed %3.2f%%",
+    elapsed * 1000.0,
     (Double(originalSize) / 1024.0),
     (Double(compressedSize) / 1024.0),
     ((Double(compressedSize) / Double(originalSize)) * 100)
