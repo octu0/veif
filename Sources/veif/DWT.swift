@@ -341,7 +341,7 @@ public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
     
     let half = ((size + 1) / 2)
     
-    var sub = Subbands(
+    let sub = Subbands(
         ll: Block2D(width: half, height: half),
         hl: Block2D(width: half, height: half),
         lh: Block2D(width: half, height: half),
@@ -378,7 +378,7 @@ public func invDwt2d(_ sub: Subbands) -> Block2D {
     let half = sub.size
     let size = (sub.size * 2)
     
-    var block = Block2D(width: size, height: size)
+    let block = Block2D(width: size, height: size)
     
     for y in 0..<half {
         for x in 0..<size {

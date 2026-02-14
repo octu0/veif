@@ -20,8 +20,8 @@ struct DWTTests {
         let original = data
         
         data.withUnsafeMutableBufferPointer { ptr in
-            lift53(ptr, stride: 1)
-            invLift53(ptr, stride: 1)
+            lift53(ptr, count: size, stride: 1)
+            invLift53(ptr, count: size, stride: 1)
         }
         
         #expect(data == original, "Seed: \(seed) - データが元に戻りません")
@@ -34,8 +34,8 @@ struct DWTTests {
         let original = data
         
         data.withUnsafeMutableBufferPointer { ptr in
-            lift53(ptr, stride: 1)
-            invLift53(ptr, stride: 1)
+            lift53(ptr, count: size, stride: 1)
+            invLift53(ptr, count: size, stride: 1)
         }
         
         #expect(data == original, "Seed: \(seed) - データが元に戻りません")
@@ -48,8 +48,8 @@ struct DWTTests {
         let original = data
         
         data.withUnsafeMutableBufferPointer { ptr in
-            lift53(ptr, stride: 1)
-            invLift53(ptr, stride: 1)
+            lift53(ptr, count: size, stride: 1)
+            invLift53(ptr, count: size, stride: 1)
         }
         
         #expect(data == original, "Seed: \(seed) - データが元に戻りません")
@@ -62,8 +62,8 @@ struct DWTTests {
         let original = data
         
         data.withUnsafeMutableBufferPointer { ptr in
-            lift53(ptr, stride: 1)
-            invLift53(ptr, stride: 1)
+            lift53(ptr, count: size, stride: 1)
+            invLift53(ptr, count: size, stride: 1)
         }
         
         #expect(data == original, "Seed: \(seed) - データが元に戻りません")

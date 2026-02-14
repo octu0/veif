@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Decode Logic
 
 func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
-    var block = Block2D(width: size, height: size)
+    let block = Block2D(width: size, height: size)
     for y in 0..<size {
         let offset = block.rowOffset(y: y)
         for x in 0..<size {
@@ -15,7 +15,7 @@ func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
 }
 
 func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
-    var block = Block2D(width: size, height: size)
+    let block = Block2D(width: size, height: size)
     var prevVal: Int16 = 0
 
     for y in 0..<size {

@@ -265,7 +265,7 @@ public struct Image16: Sendable {
     }
     
     public func getY(x: Int, y: Int, size: Int) -> Block2D {
-        var block = Block2D(width: size, height: size)
+        let block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
@@ -276,7 +276,7 @@ public struct Image16: Sendable {
     }
     
     public func getCb(x: Int, y: Int, size: Int) -> Block2D {
-        var block = Block2D(width: size, height: size)
+        let block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
@@ -287,7 +287,7 @@ public struct Image16: Sendable {
     }
     
     public func getCr(x: Int, y: Int, size: Int) -> Block2D {
-        var block = Block2D(width: size, height: size)
+        let block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))

@@ -1,7 +1,8 @@
+import Foundation
 
 // MARK: - Block2D
 
-public struct Block2D: Sendable {
+public class Block2D: @unchecked Sendable {
     public var data: [Int16]
     public let width: Int
     public let height: Int
@@ -25,10 +26,14 @@ public struct Block2D: Sendable {
         return (y * width)
     }
 
-    public mutating func setRow(offsetY: Int, size: Int, row: [Int16]) {
+    public func setRow(offsetY: Int, size: Int, row: [Int16]) {
         let offset = self.rowOffset(y: offsetY)
-        for i in 0..<size {
-            self.data[offset + i] = row[i]
+        row.withUnsafeBufferPointer { ptr in
+            self.data.withUnsafeMutableBufferPointer { dest in
+                let destPtr = dest.baseAddress!.advanced(by: offset)
+                let srcPtr = ptr.baseAddress!
+                memcpy(destPtr, srcPtr, size * MemoryLayout<Int16>.size)
+            }
         }
     }
 }
