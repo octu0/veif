@@ -13,6 +13,7 @@ public struct Subbands {
 
 // MARK: - LeGall 5/3 Lifting
 
+@inline(__always)
 public func lift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     #if arch(arm64) || arch(x86_64)
     switch count {
@@ -30,6 +31,7 @@ public func lift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stri
     #endif
 }
 
+@inline(__always)
 public func invLift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     #if arch(arm64) || arch(x86_64)
     switch count {
@@ -49,7 +51,7 @@ public func invLift53(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, s
 
 // MARK: - Lifting Scalar (fallback)
 
-private func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
+internal func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     let half = (count / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
@@ -87,7 +89,7 @@ private func lift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: In
     }
 }
 
-private func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
+internal func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count: Int, stride: Int) {
     let half = (count / 2)
     var low = [Int16](repeating: 0, count: half)
     var high = [Int16](repeating: 0, count: half)
@@ -127,6 +129,7 @@ private func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count:
 
 // MARK: - Lifting SIMD
 
+@inlinable @inline(__always)
 func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 8, half = 4
     
@@ -150,6 +153,7 @@ func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     buffer[4 * stride] = high[0]; buffer[5 * stride] = high[1]; buffer[6 * stride] = high[2]; buffer[7 * stride] = high[3]
 }
 
+@inlinable @inline(__always)
 func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 16, half = 8
     
@@ -179,6 +183,7 @@ func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     buffer[12 * stride] = high[4]; buffer[13 * stride] = high[5]; buffer[14 * stride] = high[6]; buffer[15 * stride] = high[7]
 }
 
+@inlinable @inline(__always)
 func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 32, half = 16
     
@@ -217,6 +222,7 @@ func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     }
 }
 
+@inlinable @inline(__always)
 func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 8, half = 4
     
@@ -242,6 +248,7 @@ func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     buffer[6 * stride] = low[3]; buffer[7 * stride] = high[3]
 }
 
+@inlinable @inline(__always)
 func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 16, half = 8
     
@@ -275,6 +282,7 @@ func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     buffer[14 * stride] = low[7]; buffer[15 * stride] = high[7]
 }
 
+@inlinable @inline(__always)
 func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     // size = 32, half = 16
     
@@ -522,6 +530,7 @@ private func mergeSubbands(_ sub: Subbands, size: Int) -> Block2D {
 
 // MARK: - 2D DWT
 
+@inline(__always)
 public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
     #if arch(arm64) || arch(x86_64)
     switch size {
@@ -539,7 +548,7 @@ public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
     #endif
 }
 
-private func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
+internal func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
     block.data.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }
         
@@ -562,6 +571,7 @@ private func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
     return splitSubbands(&block, size: size)
 }
 
+@inline(__always)
 public func invDwt2d(_ sub: Subbands) -> Block2D {
     let size = (sub.size * 2)
     #if arch(arm64) || arch(x86_64)
@@ -580,7 +590,7 @@ public func invDwt2d(_ sub: Subbands) -> Block2D {
     #endif
 }
 
-private func invDwt2dScalar(_ sub: Subbands) -> Block2D {
+internal func invDwt2dScalar(_ sub: Subbands) -> Block2D {
     let size = (sub.size * 2)
     let block = mergeSubbands(sub, size: size)
     

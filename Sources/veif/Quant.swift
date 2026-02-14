@@ -5,31 +5,38 @@ let quantizeLowOffset = 0
 let quantizeMidOffset = 1
 let quantizeHighOffset = 3
 
+@inline(__always)
 public func quantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
     quantize(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
+@inline(__always)
 public func quantizeLowSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     quantizeSignedMapping(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
+@inline(__always)
 public func quantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
     quantize(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
+@inline(__always)
 public func quantizeMidSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     quantizeSignedMapping(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
+@inline(__always)
 public func quantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
     quantize(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
+@inline(__always)
 public func quantizeHighSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     quantizeSignedMapping(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
-private func quantize(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func quantize(_ block: inout Block2D, size: Int, scale: Int) {
     #if arch(arm64) || arch(x86_64)
     let total = (size * size)
     switch total {
@@ -49,7 +56,8 @@ private func quantize(_ block: inout Block2D, size: Int, scale: Int) {
     #endif
 }
 
-private func quantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func quantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     #if arch(arm64) || arch(x86_64)
     let total = (size * size)
     switch total {
@@ -73,7 +81,8 @@ private func quantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int
 
 #if arch(arm64) || arch(x86_64)
 
-private func quantizeSIMD4(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD4(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD4<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
     let zero = SIMD4<Int16>.zero
@@ -94,7 +103,8 @@ private func quantizeSIMD4(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD4<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
     let zero = SIMD4<Int16>.zero
@@ -116,7 +126,8 @@ private func quantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD8(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD8(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD8<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
     let zero = SIMD8<Int16>.zero
@@ -137,7 +148,8 @@ private func quantizeSIMD8(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD8<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
     let zero = SIMD8<Int16>.zero
@@ -159,7 +171,8 @@ private func quantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD16(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD16(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD16<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
     let zero = SIMD16<Int16>.zero
@@ -180,7 +193,8 @@ private func quantizeSIMD16(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD16<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
     let zero = SIMD16<Int16>.zero
@@ -202,7 +216,8 @@ private func quantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD32(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD32(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD32<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
     let zero = SIMD32<Int16>.zero
@@ -223,7 +238,8 @@ private func quantizeSIMD32(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func quantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func quantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
     let offVec = SIMD32<Int16>(repeating: Int16(1 << (scale - 1)))
     let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
     let zero = SIMD32<Int16>.zero
@@ -249,7 +265,8 @@ private func quantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
 
 // MARK: - Quantization Scalar (fallback)
 
-private func quantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func quantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
     let total = (size * size)
     for i in 0..<total {
         let v = Int32(block.data[i])
@@ -265,7 +282,8 @@ private func quantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
     }
 }
 
-private func quantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func quantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     let total = (size * size)
     for i in 0..<total {
         let v = Int32(block.data[i])
@@ -283,31 +301,38 @@ private func quantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scal
 
 // MARK: - Dequantization
 
+@inline(__always)
 public func dequantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
     dequantize(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
+@inline(__always)
 public func dequantizeLowSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeLowOffset))
 }
 
+@inline(__always)
 public func dequantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
     dequantize(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
+@inline(__always)
 public func dequantizeMidSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeMidOffset))
 }
 
+@inline(__always)
 public func dequantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
     dequantize(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
+@inline(__always)
 public func dequantizeHighSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeHighOffset))
 }
 
-private func dequantize(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func dequantize(_ block: inout Block2D, size: Int, scale: Int) {
     #if arch(arm64) || arch(x86_64)
     let total = (size * size)
     switch total {
@@ -327,7 +352,8 @@ private func dequantize(_ block: inout Block2D, size: Int, scale: Int) {
     #endif
 }
 
-private func dequantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func dequantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     #if arch(arm64) || arch(x86_64)
     let total = (size * size)
     switch total {
@@ -351,7 +377,8 @@ private func dequantizeSignedMapping(_ block: inout Block2D, size: Int, scale: I
 
 #if arch(arm64) || arch(x86_64)
 
-private func dequantizeSIMD4(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD4(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -366,7 +393,8 @@ private func dequantizeSIMD4(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -385,7 +413,8 @@ private func dequantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD8(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD8(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -400,7 +429,8 @@ private func dequantizeSIMD8(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -419,7 +449,8 @@ private func dequantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD16(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD16(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -434,7 +465,8 @@ private func dequantizeSIMD16(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -453,7 +485,8 @@ private func dequantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD32(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD32(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -468,7 +501,8 @@ private func dequantizeSIMD32(_ block: inout Block2D, scale: Int) {
     }
 }
 
-private func dequantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
+@inline(__always)
+internal func dequantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
@@ -491,14 +525,16 @@ private func dequantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
 
 // MARK: - Dequantization Scalar (fallback)
 
-private func dequantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func dequantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
     let total = (size * size)
     for i in 0..<total {
         block.data[i] = (block.data[i] &<< scale)
     }
 }
 
-private func dequantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+@inline(__always)
+internal func dequantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
     let total = (size * size)
     for i in 0..<total {
         var v = block.data[i]

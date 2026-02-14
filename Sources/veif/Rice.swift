@@ -2,10 +2,12 @@ import Foundation
 
 // MARK: - Helper
 
+@inlinable @inline(__always)
 public func toUint16(_ n: Int16) -> UInt16 {
     return UInt16(bitPattern: ((n &<< 1) ^ (n >> 15)))
 }
 
+@inlinable @inline(__always)
 public func toInt16(_ u: UInt16) -> Int16 {
     let s = Int16(bitPattern: (u >> 1))
     let m = (-1 * Int16(bitPattern: (u & 1)))
@@ -84,7 +86,7 @@ public class RiceWriter {
         self.lastK = 0
     }
     
-    private func writePrimitive(val: UInt16, k: UInt8) {
+    internal func writePrimitive(val: UInt16, k: UInt8) {
         let m = (UInt16(1) << k)
         let q = (val / m)
         let r = (val % m)
@@ -115,7 +117,7 @@ public class RiceWriter {
         writePrimitive(val: val, k: k)
     }
     
-    private func flushZeros(k: UInt8) {
+    internal func flushZeros(k: UInt8) {
         if zeroCount == 0 {
             return
         }
@@ -150,6 +152,7 @@ public class BitReader {
         self.dataCount = data.count
     }
     
+    @inline(__always)
     public func readBit() throws -> UInt8 {
         if bits == 0 {
             if dataCount <= offset {
@@ -164,6 +167,7 @@ public class BitReader {
         return bit
     }
     
+    @inline(__always)
     public func readBits(n: UInt8) throws -> UInt16 {
         var val: UInt16 = 0
         for _ in 0..<n {
@@ -185,7 +189,7 @@ public class RiceReader {
         self.pendingZeros = 0
     }
     
-    private func readPrimitive(k: UInt8) throws -> UInt16 {
+    internal func readPrimitive(k: UInt8) throws -> UInt16 {
         var q: UInt16 = 0
         while true {
             let bit = try br.readBit()

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Utilities
 
+@inlinable @inline(__always)
 func boundaryRepeat(_ width: Int, _ height: Int, _ px: Int, _ py: Int) -> (Int, Int) {
     var x = px
     var y = py
@@ -42,6 +43,7 @@ func boundaryRepeat(_ width: Int, _ height: Int, _ px: Int, _ py: Int) -> (Int, 
     return (x, y)
 }
 
+@inlinable @inline(__always)
 func clampU8(_ v: Int16) -> UInt8 {
     if v < 0 {
         return 0
@@ -67,11 +69,16 @@ public struct YCbCrImage: Sendable {
     public let height: Int
     public let ratio: YCbCrRatio
     
-    public var yStride: Int { width }
+    public var yStride: Int {
+        @inlinable @inline(__always) get { width }
+    }
+
     public var cStride: Int {
-        switch ratio {
-        case .ratio420: return (width / 2)
-        case .ratio444: return width
+        @inlinable @inline(__always) get {
+            switch ratio {
+            case .ratio420: return (width / 2)
+            case .ratio444: return width
+            }
         }
     }
     
@@ -93,14 +100,17 @@ public struct YCbCrImage: Sendable {
         }
     }
     
+    @inlinable @inline(__always)
     public func yOffset(_ x: Int, _ y: Int) -> Int {
         return ((y * yStride) + x)
     }
     
+    @inlinable @inline(__always)
     public func cOffset(_ x: Int, _ y: Int) -> Int {
         return ((y * cStride) + x)
     }
 
+    @inline(__always)
     private func getChromaSize(w: Int, h: Int, ratio: YCbCrRatio) -> (Int, Int) {
         switch ratio {
         case .ratio420:
