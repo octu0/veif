@@ -30,8 +30,13 @@ When a client needs a specific resolution, the server (or the application logic)
 *   Need a **Thumbnail**? -> Extract **Layer 0** only.
 *   Need a **Preview**? -> Extract **Layer 0 + Layer 1**.
 *   Need **Full Detail**? -> Extract **All Layers**.
+*   Need **Speed**? -> Use **One** mode (Single layer, no progressive structure).
 
 This approach eliminates the need for server-side resizing or re-compression. The "transcoding" process is replaced by efficient binary slicing (demuxing), drastically reducing server CPU load and storage requirements.
+
+### One Mode
+
+The `One` mode is designed for scenarios where speed is the top priority. Unlike the default multi-resolution format, it stores the image as a single data layer without a progressive structure. This reduces processing overhead for both encoding and decoding while maintaining the same image quality.
 
 | Layer         | Resolution | Size | Image |
 | :---          | :---       | :--- | :--- |
