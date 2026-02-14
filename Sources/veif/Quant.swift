@@ -48,16 +48,15 @@ private func quantizeSIMD4(_ block: inout Block2D, scale: Int) {
     let negOne = SIMD4<Int16>(repeating: -1)
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 4) {
-            var vec = SIMD4<Int16>(buf[i], buf[i + 1], buf[i + 2], buf[i + 3])
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
             let isNeg = vec .< zero
             let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
             let quantized = (absVec &+ offVec) &>> scaleVec
             vec = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            buf[i + 0] = vec[0]
-            buf[i + 1] = vec[1]
-            buf[i + 2] = vec[2]
-            buf[i + 3] = vec[3]
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD4<Int16>.self)
         }
     }
 }
@@ -69,16 +68,15 @@ private func quantizeSIMD8(_ block: inout Block2D, scale: Int) {
     let negOne = SIMD8<Int16>(repeating: -1)
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 8) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 8)])
-            var vec = SIMD8<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
             let isNeg = vec .< zero
             let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
             let quantized = (absVec &+ offVec) &>> scaleVec
             vec = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            for j in 0..<8 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD8<Int16>.self)
         }
     }
 }
@@ -90,16 +88,15 @@ private func quantizeSIMD16(_ block: inout Block2D, scale: Int) {
     let negOne = SIMD16<Int16>(repeating: -1)
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 16) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 16)])
-            var vec = SIMD16<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
             let isNeg = vec .< zero
             let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
             let quantized = (absVec &+ offVec) &>> scaleVec
             vec = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            for j in 0..<16 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD16<Int16>.self)
         }
     }
 }
@@ -111,16 +108,15 @@ private func quantizeSIMD32(_ block: inout Block2D, scale: Int) {
     let negOne = SIMD32<Int16>(repeating: -1)
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 32) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 32)])
-            var vec = SIMD32<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
             let isNeg = vec .< zero
             let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
             let quantized = (absVec &+ offVec) &>> scaleVec
             vec = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            for j in 0..<32 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD32<Int16>.self)
         }
     }
 }
@@ -184,13 +180,12 @@ private func dequantizeSIMD4(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 4) {
-            var vec = SIMD4<Int16>(buf[i], buf[i + 1], buf[i + 2], buf[i + 3])
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
             vec = vec &<< scaleVec
-            buf[i] = vec[0]
-            buf[i + 1] = vec[1]
-            buf[i + 2] = vec[2]
-            buf[i + 3] = vec[3]
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD4<Int16>.self)
         }
     }
 }
@@ -199,13 +194,12 @@ private func dequantizeSIMD8(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 8) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 8)])
-            var vec = SIMD8<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
             vec = vec &<< scaleVec
-            for j in 0..<8 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD8<Int16>.self)
         }
     }
 }
@@ -214,13 +208,12 @@ private func dequantizeSIMD16(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 16) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 16)])
-            var vec = SIMD16<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
             vec = vec &<< scaleVec
-            for j in 0..<16 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD16<Int16>.self)
         }
     }
 }
@@ -229,13 +222,12 @@ private func dequantizeSIMD32(_ block: inout Block2D, scale: Int) {
     let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
 
     block.data.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return }
         for i in stride(from: 0, to: buf.count, by: 32) {
-            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i + 32)])
-            var vec = SIMD32<Int16>(ptr)
+            let p = base.advanced(by: i)
+            var vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
             vec = vec &<< scaleVec
-            for j in 0..<32 {
-                buf[i + j] = vec[j]
-            }
+            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD32<Int16>.self)
         }
     }
 }
