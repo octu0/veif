@@ -417,6 +417,21 @@ public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
     return out
 }
 
+public func encodeLayers(img: YCbCrImage, maxbitrate: Int) async throws -> (Data, Data, Data) {
+    let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+
+    let r2 = ImageReader(img: img)
+    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, scale: scale)
+    
+    let r1 = ImageReader(img: sub2.toYCbCr())
+    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, scale: scale)
+    
+    let r0 = ImageReader(img: sub1.toYCbCr())
+    let layer0 = try await encodeBase(r: r0, size: 8, scale: scale)
+    
+    return (layer0, layer1, layer2)
+}
+
 public func encodeOne(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
    let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
 

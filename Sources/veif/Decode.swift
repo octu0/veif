@@ -412,6 +412,22 @@ public func decode(r: Data) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage)
     return (layer0.toYCbCr(), layer1.toYCbCr(), layer2.toYCbCr())
 }
 
+public func decodeLayers(data: Data...) async throws -> YCbCrImage {
+    guard let base = data.first else {
+        throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "No data provided"])
+    }
+    
+    var current = try await decodeBase(r: base, size: 8)
+    var currentSize = 16
+    
+    for i in 1..<data.count {
+        current = try await decodeLayer(r: data[i], prev: current, size: currentSize)
+        currentSize *= 2
+    }
+    
+    return current.toYCbCr()
+}
+
 public func decodeOne(r: Data) async throws -> YCbCrImage {
     var offset = 0
     

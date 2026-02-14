@@ -38,6 +38,8 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 The `One` mode is designed for scenarios where speed is the top priority. Unlike the default multi-resolution format, it stores the image as a single data layer without a progressive structure. This reduces processing overhead for both encoding and decoding while maintaining the same image quality.
 
+# Layer and Size
+
 | Layer         | Resolution | Size | Image |
 | :---          | :---       | :--- | :--- |
 | Layer0        | 1/4        | 7.92KB | ![Layer0](docs/out_layer0.png) |
@@ -45,6 +47,40 @@ The `One` mode is designed for scenarios where speed is the top priority. Unlike
 | Layer2        | 1          | 50.79KB | ![Layer2](docs/out_layer2.png) |
 | One(no layer) | 1          | 72.43KB | ![One](docs/out_one.png) |
 | original      | 1          | 213.68KB | ![original](docs/src.png) |
+
+# Usage
+
+```swift
+import veif
+
+// 0. Convert YCbCr
+let data = try Data(contentsOf: URL(fileURLWithPath: "src.png"))
+let ycbcr = try pngToYCbCr(data: data)
+
+// --- Default ---
+
+// 1. Encode (Progressive, default 3-layers)
+let encoded = try await encode(img: ycbcr, maxbitrate: 200 * 1000)
+
+// 2. Decode (Extract all layers)
+let (layer0, layer1, layer2) = try await decode(r: encoded)
+
+// --- Speed Mode ---
+
+// Encode as single layer
+let encodedOne = try await encodeOne(img: ycbcr, maxbitrate: 200 * 1000)
+
+// Decode single layer
+let decodedOne = try await decodeOne(r: encodedOne)
+
+// --- Individual Layer Handling ---
+
+// Encode into separate layer data
+let (e0, e1, e2) = try await encodeLayers(img: ycbcr, maxbitrate: 200 * 1000)
+
+// Decode by stacking layers
+let decodedLayers = try await decodeLayers(data: e0, e1, e2)
+```
 
 ## Internals
 

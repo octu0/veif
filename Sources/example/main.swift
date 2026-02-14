@@ -86,6 +86,11 @@ guard let outOne = try? await encodeOne(img: ycbcr, maxbitrate: (bitrate * 1000)
 }
 let elapsedOne = Date().timeIntervalSince(startTimeOne)
 
+guard let (encoded0, encoded1, encoded2) = try? await encodeLayers(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
+    print("Failed to encode")
+    exit(1)
+}
+
 func readLayerSizes(data: Data) -> (Int, Int, Int) {
     var offset = 0
     func readLen() -> Int {
@@ -136,7 +141,12 @@ guard let (layer0, layer1, layer2) = try? await decode(r: out) else {
 guard let layerOne = try? await decodeOne(r: outOne) else {
     print("Failed to decode")
     exit(1)
-}   
+}
+
+guard let layers = try? await decodeLayers(data:encoded0, encoded1, encoded2) else {
+    print("Failed to decode")
+    exit(1)
+}
 
 func fmtSize(_ size: Int) -> String {
     return String(format: "%.2fKB", (Double(size) / 1024.0))
@@ -162,3 +172,4 @@ print("| One | 1 | \(fmtSize(lOneSize)) |")
 let srcFileSize = (try? Data(contentsOf: srcURL).count) ?? 0
 print("| original | 1 | \(fmtSize(srcFileSize)) |")
 
+try? saveImage(img: layers, url: outURL.appendingPathComponent("out_layers.png"))
