@@ -33,12 +33,13 @@ When a client needs a specific resolution, the server (or the application logic)
 
 This approach eliminates the need for server-side resizing or re-compression. The "transcoding" process is replaced by efficient binary slicing (demuxing), drastically reducing server CPU load and storage requirements.
 
-| Layer | Resolution | Size | Image |
-| :--- | :--- | :--- | :--- |
-| Layer0 | 1/4 | 7.92KB | ![Layer0](docs/out_layer0.png) |
-| Layer1 | 1/2 | 19.56KB | ![Layer1](docs/out_layer1.png) |
-| Layer2 | 1 | 50.79KB | ![Layer2](docs/out_layer2.png) |
-| original | 1 | 213.68KB | ![original](docs/src.png) |
+| Layer         | Resolution | Size | Image |
+| :---          | :---       | :--- | :--- |
+| Layer0        | 1/4        | 7.92KB | ![Layer0](docs/out_layer0.png) |
+| Layer1        | 1/2        | 19.56KB | ![Layer1](docs/out_layer1.png) |
+| Layer2        | 1          | 50.79KB | ![Layer2](docs/out_layer2.png) |
+| One(no layer) | 1          | 72.43KB | ![One](docs/out_one.png) |
+| original      | 1          | 213.68KB | ![original](docs/src.png) |
 
 ## Internals
 

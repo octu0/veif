@@ -416,3 +416,17 @@ public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
     
     return out
 }
+
+public func encodeOne(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
+   let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+
+    let r = ImageReader(img: img)
+    let layer = try await encodeBase(r: r, size: 32, scale: scale)
+
+    var out = Data()
+    
+    withUnsafeBytes(of: UInt32(layer.count).bigEndian) { out.append(contentsOf: $0) }
+    out.append(layer)
+    
+    return out
+}

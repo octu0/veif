@@ -411,3 +411,27 @@ public func decode(r: Data) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage)
     
     return (layer0.toYCbCr(), layer1.toYCbCr(), layer2.toYCbCr())
 }
+
+public func decodeOne(r: Data) async throws -> YCbCrImage {
+    var offset = 0
+    
+    func readUInt32() throws -> UInt32 {
+        guard (offset + 4) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
+        let val = r.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+        offset += 4
+        return val
+    }
+
+    func readLayerData() throws -> Data {
+        let len = try readUInt32()
+        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
+        let data = r.subdata(in: offset..<(offset + Int(len)))
+        offset += Int(len)
+        return data
+    }
+    
+    let layerOneData = try readLayerData()
+    let layerOne = try await decodeBase(r: layerOneData, size: 32)
+    
+    return layerOne.toYCbCr()
+}
