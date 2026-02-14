@@ -432,7 +432,7 @@ public func saveImage(img: YCbCrImage, url: URL) throws {
     
     for y in 0..<height {
         for x in 0..<width {
-            let yVal = Float(img.yPlane[img.yOffset(x, y)])
+            let yScaled = Int(img.yPlane[img.yOffset(x, y)]) << 10
             
             var cPx = x
             var cPy = y
@@ -442,12 +442,12 @@ public func saveImage(img: YCbCrImage, url: URL) throws {
             }
             
             let cOff = img.cOffset(cPx, cPy)
-            let cbVal = Float(img.cbPlane[cOff]) - 128.0
-            let crVal = Float(img.crPlane[cOff]) - 128.0
+            let cbDiff = Int(img.cbPlane[cOff]) - 128
+            let crDiff = Int(img.crPlane[cOff]) - 128
             
-            let r = Int((yVal + (1.40200 * crVal)))
-            let g = Int((yVal - (0.34414 * cbVal) - (0.71414 * crVal)))
-            let b = Int((yVal + (1.77200 * cbVal)))
+            let r = (yScaled + (1436 * crDiff)) >> 10
+            let g = (yScaled - (352 * cbDiff) - (731 * crDiff)) >> 10
+            let b = (yScaled + (1815 * cbDiff)) >> 10
             
             let offset = ((y * bytesPerRow) + (x * bytesPerPixel))
             rawData[offset + 0] = UInt8(clamping: r)
