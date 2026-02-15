@@ -76,7 +76,7 @@ public struct YCbCrImage: Sendable {
     public var cStride: Int {
         @inlinable @inline(__always) get {
             switch ratio {
-            case .ratio420: return (width / 2)
+            case .ratio420: return (width + 1) / 2
             case .ratio444: return width
             }
         }
@@ -90,7 +90,9 @@ public struct YCbCrImage: Sendable {
         
         switch ratio {
         case .ratio420:
-            let cSize = ((width / 2) * (height / 2))
+             let cw = (width + 1) / 2
+             let ch = (height + 1) / 2
+             let cSize = (cw * ch)
             self.cbPlane = [UInt8](repeating: 0, count: cSize)
             self.crPlane = [UInt8](repeating: 0, count: cSize)
         case .ratio444:
@@ -114,7 +116,7 @@ public struct YCbCrImage: Sendable {
     private func getChromaSize(w: Int, h: Int, ratio: YCbCrRatio) -> (Int, Int) {
         switch ratio {
         case .ratio420:
-            return (w / 2, h / 2)
+            return ((w + 1) / 2, (h + 1) / 2)
         case .ratio444:
             return (w, h)
         }

@@ -38,7 +38,7 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 The `One` mode is designed for scenarios where speed is the top priority. Unlike the default multi-resolution format, it stores the image as a single data layer without a progressive structure. This reduces processing overhead for both encoding and decoding while maintaining the same image quality.
 
-# Layer and Size
+# Performance
 
 | Layer         | Resolution | Size | Image |
 | :---          | :---       | :--- | :--- |
@@ -47,6 +47,22 @@ The `One` mode is designed for scenarios where speed is the top priority. Unlike
 | Layer2        | 1          | 28.34KB | ![Layer2](docs/out_layer2.png) |
 | One(no layer) | 1          | 40.44KB | ![One](docs/out_one.png) |
 | original      | 1          | 213.68KB | ![original](docs/src.png) |
+
+### Quality (Size vs MS-SSIM)
+![compare size mm-ssim](docs/compare_size_ms-ssim.png)
+
+### Speed (Time vs MS-SSIM)
+![compare speed mm-ssim](docs/compare_speed_ms-ssim.png)
+
+### Thumbnail Speed (Total Time)
+**veif (DecOnly)** vs **JPEG (FullDec+Resize+Enc+Dec)**
+
+![compare thumbnail mm-ssim](docs/compare_total_thumbnail_ms-ssim.png)
+
+### Resolution Quality (160p - 5MP)
+**JPEG (Red)** vs **veif (Blue)**
+
+![compare resolution quality mm-ssim](docs/compare_resolution_quality_ms-ssim.png)
 
 # Usage
 
@@ -109,6 +125,12 @@ benchmark
 
 ```bash
 $ swift run -c release example -benchmark ./docs/src.png
+```
+
+compare
+
+```bash
+$ swift run -c release example -compare ./docs/color.png /path/to/output/dir
 ```
 
 ## License

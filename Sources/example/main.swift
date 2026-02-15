@@ -7,6 +7,7 @@ let args = CommandLine.arguments
 var bitrate = 200
 var benchmarkMode = false
 var profileMode = false
+var compareMode = false
 var positionalArgs: [String] = []
 
 var i = 1
@@ -23,6 +24,8 @@ while i < args.count {
         }
     case "-benchmark":
         benchmarkMode = true
+    case "-compare":
+        compareMode = true
     case "-profile":
         profileMode = true
     default:
@@ -43,6 +46,11 @@ if FileManager.default.fileExists(atPath: outURL.path) != true {
 
 if benchmarkMode == true {
     await runBenchmark(srcURL: srcURL)
+    exit(0)
+}
+
+if compareMode == true {
+    await runCompare(srcURL: srcURL, outURL: outURL)
     exit(0)
 }
 
