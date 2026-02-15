@@ -61,7 +61,7 @@ func quantizeHighSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
 
 @inline(__always)
 internal func quantize(_ block: inout Block2D, q: Quantizer) {
-    #if arch(arm64) || arch(x86_64)
+    #if arch(arm64) || arch(x86_64) || arch(wasm32)
     quantizeSIMD(&block, q: q)
     #else
     quantizeScalar(&block, q: q)
@@ -70,7 +70,7 @@ internal func quantize(_ block: inout Block2D, q: Quantizer) {
 
 @inline(__always)
 internal func quantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
-    #if arch(arm64) || arch(x86_64)
+    #if arch(arm64) || arch(x86_64) || arch(wasm32)
     quantizeSIMDSignedMapping(&block, q: q)
     #else
     quantizeScalarSignedMapping(&block, q: q)
@@ -79,7 +79,7 @@ internal func quantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
 
 // MARK: - Quantization SIMD
 
-#if arch(arm64) || arch(x86_64)
+#if arch(arm64) || arch(x86_64) || arch(wasm32)
 
 @inline(__always)
 private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32) -> SIMD8<Int16> {
@@ -227,7 +227,7 @@ func dequantizeHighSignedMapping(_ block: inout Block2D, qt: QuantizationTable) 
 
 @inline(__always)
 internal func dequantize(_ block: inout Block2D, q: Quantizer) {
-    #if arch(arm64) || arch(x86_64)
+    #if arch(arm64) || arch(x86_64) || arch(wasm32)
     dequantizeSIMD(&block, q: q)
     #else
     dequantizeScalar(&block, q: q)
@@ -236,7 +236,7 @@ internal func dequantize(_ block: inout Block2D, q: Quantizer) {
 
 @inline(__always)
 internal func dequantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
-    #if arch(arm64) || arch(x86_64)
+    #if arch(arm64) || arch(x86_64) || arch(wasm32)
     dequantizeSIMDSignedMapping(&block, q: q)
     #else
     dequantizeScalarSignedMapping(&block, q: q)
@@ -245,7 +245,7 @@ internal func dequantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
 
 // MARK: - Dequantization SIMD
 
-#if arch(arm64) || arch(x86_64)
+#if arch(arm64) || arch(x86_64) || arch(wasm32)
 
 @inline(__always)
 private func performDequantizeSIMD8(_ vec: SIMD8<Int16>, step: Int32) -> SIMD8<Int16> {
