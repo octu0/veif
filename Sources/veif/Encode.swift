@@ -311,7 +311,66 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
     return out
 }
 
-func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
+private func measureBlockBits(block: inout Block2D, size: Int, scale: Int) -> Int {
+    var sub = dwt2d(&block, size: size)
+    
+    quantizeLow(&sub.ll, size: sub.size, scale: scale)
+    quantizeMid(&sub.hl, size: sub.size, scale: scale)
+    quantizeMid(&sub.lh, size: sub.size, scale: scale)
+    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    
+    var totalBits = 0
+    
+    totalBits += estimateSumBitsDPCM(block: sub.ll, size: sub.size)
+    totalBits += estimateSumBits(block: sub.hl, size: sub.size)
+    totalBits += estimateSumBits(block: sub.lh, size: sub.size)
+    totalBits += estimateSumBits(block: sub.hh, size: sub.size)
+    
+    return totalBits
+}
+
+@inline(__always)
+private func estimateSumBits(block: Block2D, size: Int) -> Int {
+    var bits = 0
+    block.data.withUnsafeBufferPointer { ptr in
+        for i in 0..<(size * size) {
+            let val = abs(Int(ptr[i]))
+            if val == 0 {
+                bits += 1 
+            } else {
+                // Rice (k=1) bit count approx:
+                // q = val / 2
+                // output = q '1's + 1 '0' + remaining 1 bit = q + 2 bits
+                // e.g.: 3 -> 1101 (4bit) vs estimate(1+2=3bit) ...
+                bits += (val >> 1) + 2
+            }
+        }
+    }
+    return bits
+}
+
+@inline(__always)
+private func estimateSumBitsDPCM(block: Block2D, size: Int) -> Int {
+    var bits = 0
+    var prevVal: Int16 = 0
+    
+    block.data.withUnsafeBufferPointer { ptr in
+        for i in 0..<(size * size) {
+            let val = ptr[i]
+            let diff = abs(Int(val - prevVal))
+            
+            if diff == 0 {
+                bits += 1
+            } else {
+                bits += (diff >> 1) + 2
+            }
+            prevVal = val
+        }
+    }
+    return bits
+}
+
+private func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
     // 8 points
     let size = 8
     let w = (img.width / size)
@@ -328,67 +387,64 @@ func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
     ]
     
     let baseScale = 1
-    var totalSize = 0
+    var totalEstimatedBits = 0
     let r = ImageReader(img: img)
     
+    // Sampling loop
     for (sx, sy) in points {
-        // Y
+        // Y Plane
         var block = Block2D(width: w, height: h)
         for i in 0..<h {
             let row = r.rowY(x: sx, y: sy + i, size: w)
             block.setRow(offsetY: i, size: w, row: row)
         }
+        totalEstimatedBits += measureBlockBits(block: &block, size: size, scale: baseScale)
         
-        let data = NSMutableData(capacity: w * h) ?? NSMutableData()
-        let _ = BitWriter(data: data)
-        try? transformBase(data: data, block: &block, size: size, scale: baseScale)
-        totalSize += data.length
-        
-        // Cb
+        // Cb Plane
         var blockCb = Block2D(width: w, height: h)
         for i in 0..<h {
             let row = r.rowCb(x: sx, y: sy + i, size: w)
             blockCb.setRow(offsetY: i, size: w, row: row)
         }
-        try? transformBase(data: data, block: &blockCb, size: size, scale: baseScale)
-        totalSize += data.length
+        totalEstimatedBits += measureBlockBits(block: &blockCb, size: size, scale: baseScale)
         
-        // Cr
+        // Cr Plane
         var blockCr = Block2D(width: w, height: h)
         for i in 0..<h {
             let row = r.rowCr(x: sx, y: sy + i, size: w)
             blockCr.setRow(offsetY: i, size: w, row: row)
         }
-        try? transformBase(data: data, block: &blockCr, size: size, scale: baseScale)
-        totalSize += data.length
+        totalEstimatedBits += measureBlockBits(block: &blockCr, size: size, scale: baseScale)
     }
     
-    // Total Raw Size of sampled blocks (Y + Cb + Cr)
-    // 4:4:4 assumption for simplification in sampling (reading r.rowCb/Cr at same coordinates)
-    // Each pixel has Y, Cb, Cr components -> 3 bytes per pixel
-    // points.count * (w * h) * 3
-    let totalSampleRawSize = (points.count * (w * h) * 3)
+    // Estimated total bits (for sampling)
+    let estimatedSampleBits = Double(totalEstimatedBits)
     
-    // Compression Ratio of samples (Encoded / Raw)
-    // Avoid division by zero
-    let compressionRatio = (Double(totalSize * 8) / Double(totalSampleRawSize * 8))
-
-    let totalImageRawBits = ((img.yPlane.count + img.cbPlane.count + img.crPlane.count) * 8)
-
-    let estimatedCurrentBitrate = (compressionRatio * Double(totalImageRawBits))
-    let adjustmentRatio = (estimatedCurrentBitrate / Double(targetBitrate))
+    // Total pixel bits of original image (Y+Cb+Cr) * 8
+    let totalImageRawBits = Double((img.yPlane.count + img.cbPlane.count + img.crPlane.count) * 8)
     
+    // Raw data size of sampled area (bits)
+    // points.count * (w * h) pixels * 3ch * 8bit
+    let sampleRawBits = Double(points.count * (w * h) * 3 * 8)
+    
+    // Compression ratio = Estimated compressed bits / Sample raw bits
+    let compressionRatio = estimatedSampleBits / sampleRawBits
+    
+    // Estimated bitrate when applied to the entire image
+    let estimatedCurrentBitrate = compressionRatio * totalImageRawBits
+    
+    let adjustmentRatio = estimatedCurrentBitrate / Double(targetBitrate)
+    
+    // Determine the new scale (simple proportional model)
     var resultScale: Int
-    if 1.0 < adjustmentRatio {
+    if 1.0 > adjustmentRatio {
+        // Bitrate exceeded -> Increase scale to improve compression ratio
         resultScale = Int((Double(baseScale) * adjustmentRatio) + 0.5)
     } else {
-        resultScale = Int((Double(baseScale) * adjustmentRatio) + 0.5)
+        resultScale = Int((Double(baseScale) * adjustmentRatio) - 0.5)
     }
     
-    if resultScale < 1 {
-        resultScale = 1
-    }
-    return resultScale
+    return max(1, resultScale)
 }
 
 public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
