@@ -90,9 +90,9 @@ public struct YCbCrImage: Sendable {
         
         switch ratio {
         case .ratio420:
-             let cw = (width + 1) / 2
-             let ch = (height + 1) / 2
-             let cSize = (cw * ch)
+            let cw = (width + 1) / 2
+            let ch = (height + 1) / 2
+            let cSize = (cw * ch)
             self.cbPlane = [UInt8](repeating: 0, count: cSize)
             self.crPlane = [UInt8](repeating: 0, count: cSize)
         case .ratio444:
@@ -214,48 +214,117 @@ public struct ImageReader: Sendable {
     
     public func rowY(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
-        for i in 0..<size {
-            let (px, py) = boundaryRepeat(width, height, (x + i), y)
-            let offset = img.yOffset(px, py)
-            plane[i] = Int16(img.yPlane[offset])
+        
+        // Fast path: fully within bounds
+        if 0 <= x && 0 <= y && y < height && (x + size) <= width {
+             let offset = img.yOffset(x, y)
+             img.yPlane.withUnsafeBufferPointer { srcPtr in
+                 guard let srcBase = srcPtr.baseAddress else { return }
+                 let rowStart = srcBase.advanced(by: offset)
+                 for i in 0..<size {
+                     plane[i] = Int16(rowStart[i])
+                 }
+             }
+             return plane
+        }
+        
+        img.yPlane.withUnsafeBufferPointer { srcPtr in
+            plane.withUnsafeMutableBufferPointer { destPtr in
+                guard let srcBase = srcPtr.baseAddress,
+                      let destBase = destPtr.baseAddress else { return }
+                
+                for i in 0..<size {
+                    let (px, py) = boundaryRepeat(width, height, (x + i), y)
+                    let offset = img.yOffset(px, py)
+                    destBase[i] = Int16(srcBase[offset])
+                }
+            }
         }
         return plane
     }
-    
-    public func rowCb(x: Int, y: Int, size: Int) -> [Int16] {
+
+    public func rowCb444(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
             
-            var cPx = rPx
-            var cPy = rPy
-            if img.ratio == .ratio420 {
-                cPx = (rPx / 2)
-                cPy = (rPy / 2)
-            }
+            let cPx = rPx
+            let cPy = rPy
             let offset = img.cOffset(cPx, cPy)
             plane[i] = Int16(img.cbPlane[offset])
         }
         return plane
     }
-    
-    public func rowCr(x: Int, y: Int, size: Int) -> [Int16] {
+
+    private func rowCb420(x: Int, y: Int, size: Int) -> [Int16] {
+        var plane = [Int16](repeating: 0, count: size)
+        img.cbPlane.withUnsafeBufferPointer { srcPtr in
+            plane.withUnsafeMutableBufferPointer { destPtr in
+                guard let srcBase = srcPtr.baseAddress,
+                      let destBase = destPtr.baseAddress else { return }
+                
+                for i in 0..<size {
+                    let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
+                    
+                    let cPx = (rPx / 2)
+                    let cPy = (rPy / 2)
+                    let offset = img.cOffset(cPx, cPy)
+                    destBase[i] = Int16(srcBase[offset])
+                }
+            }
+        }
+        return plane
+    }
+
+    public func rowCb(x: Int, y: Int, size: Int) -> [Int16] {
+        if img.ratio == .ratio444 {
+            return rowCb444(x: x, y: y, size: size)
+        }
+        return rowCb420(x: x, y: y, size: size)
+    }
+
+
+    public func rowCr444(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
             let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
             
-            var cPx = rPx
-            var cPy = rPy
-            if img.ratio == .ratio420 {
-                cPx = (rPx / 2)
-                cPy = (rPy / 2)
-            }
-            
+            let cPx = rPx
+            let cPy = rPy
             let offset = img.cOffset(cPx, cPy)
             plane[i] = Int16(img.crPlane[offset])
         }
         return plane
     }
+
+    public func rowCr420(x: Int, y: Int, size: Int) -> [Int16] {
+        var plane = [Int16](repeating: 0, count: size)
+        img.crPlane.withUnsafeBufferPointer { srcPtr in
+            plane.withUnsafeMutableBufferPointer { destPtr in
+                guard let srcBase = srcPtr.baseAddress,
+                      let destBase = destPtr.baseAddress else { return }
+                
+                for i in 0..<size {
+                    let (rPx, rPy) = boundaryRepeat(width, height, ((x + i) * 2), (y * 2))
+                    
+                    let cPx = (rPx / 2)
+                    let cPy = (rPy / 2)
+                    let offset = img.cOffset(cPx, cPy)
+                    destBase[i] = Int16(srcBase[offset])
+                }
+            }
+        }
+        return plane
+    }
+
+    public func rowCr(x: Int, y: Int, size: Int) -> [Int16] {
+        if img.ratio == .ratio444 {
+            return rowCr444(x: x, y: y, size: size)
+        }
+        return rowCr420(x: x, y: y, size: size)
+    }
+    
+
 }
 
 public struct Image16: Sendable {

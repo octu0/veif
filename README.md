@@ -59,7 +59,7 @@ The `One` mode is designed for scenarios where speed is the top priority. Unlike
 
 ![compare thumbnail mm-ssim](docs/compare_total_thumbnail_ms-ssim.png)
 
-### Resolution Quality (160p - 5MP)
+### Resolution Quality (160p - 1280P)
 **JPEG (Red)** vs **veif (Blue)**
 
 ![compare resolution quality mm-ssim](docs/compare_resolution_quality_ms-ssim.png)
