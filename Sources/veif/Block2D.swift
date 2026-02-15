@@ -34,4 +34,13 @@ public class Block2D: @unchecked Sendable {
             }
         }
     }
+
+    public func withUnsafeBufferPointer<R>(atRow y: Int, body: (UnsafeBufferPointer<Int16>) throws -> R) rethrows -> R {
+        let offset = self.rowOffset(y: y)
+        return try self.data.withUnsafeBufferPointer { ptr in
+            let rowStart = ptr.baseAddress!.advanced(by: offset)
+            let rowBuffer = UnsafeBufferPointer(start: rowStart, count: self.width)
+            return try body(rowBuffer)
+        }
+    }
 }

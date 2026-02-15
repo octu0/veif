@@ -307,43 +307,91 @@ public struct Image16: Sendable {
     }
     
     public mutating func updateY(data: Block2D, startX: Int, startY: Int, size: Int) {
-        for h in 0..<size {
-            if height <= (startY + h) {
-                continue
-            }
-            for w in 0..<size {
-                if width <= (startX + w) {
-                    continue
+        let validStartY = max(0, startY)
+        let validStartX = max(0, startX)
+        let validEndY = min(height, startY + size)
+        let validEndX = min(width, startX + size)
+        
+        let loopH = validEndY - validStartY
+        let loopW = validEndX - validStartX
+        
+        if loopH <= 0 || loopW <= 0 { return }
+        
+        let dataOffsetY = validStartY - startY
+        let dataOffsetX = validStartX - startX
+        
+        for h in 0..<loopH {
+            self.y[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
+                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
+                    guard let destBase = destPtr.baseAddress,
+                          let srcBase = srcPtr.baseAddress else { return }
+                    
+                    let destStart = destBase.advanced(by: validStartX)
+                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    destStart.update(from: srcStart, count: loopW)
                 }
-                self.y[startY + h][startX + w] = data[h, w]
             }
         }
     }
     
     public mutating func updateCb(data: Block2D, startX: Int, startY: Int, size: Int) {
-        for h in 0..<size {
-            if (height / 2) <= (startY + h) {
-                continue
-            }
-            for w in 0..<size {
-                if (width / 2) <= (startX + w) {
-                    continue
+        let halfHeight = (height / 2)
+        let halfWidth = (width / 2)
+        
+        let validStartY = max(0, startY)
+        let validStartX = max(0, startX)
+        let validEndY = min(halfHeight, startY + size)
+        let validEndX = min(halfWidth, startX + size)
+        
+        let loopH = validEndY - validStartY
+        let loopW = validEndX - validStartX
+        
+        if loopH <= 0 || loopW <= 0 { return }
+        
+        let dataOffsetY = validStartY - startY
+        let dataOffsetX = validStartX - startX
+        
+        for h in 0..<loopH {
+            self.cb[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
+                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
+                    guard let destBase = destPtr.baseAddress,
+                          let srcBase = srcPtr.baseAddress else { return }
+                    
+                    let destStart = destBase.advanced(by: validStartX)
+                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    destStart.update(from: srcStart, count: loopW)
                 }
-                self.cb[startY + h][startX + w] = data[h, w]
             }
         }
     }
     
     public mutating func updateCr(data: Block2D, startX: Int, startY: Int, size: Int) {
-        for h in 0..<size {
-            if (height / 2) <= (startY + h) {
-                continue
-            }
-            for w in 0..<size {
-                if (width / 2) <= (startX + w) {
-                    continue
+        let halfHeight = (height / 2)
+        let halfWidth = (width / 2)
+        
+        let validStartY = max(0, startY)
+        let validStartX = max(0, startX)
+        let validEndY = min(halfHeight, startY + size)
+        let validEndX = min(halfWidth, startX + size)
+        
+        let loopH = validEndY - validStartY
+        let loopW = validEndX - validStartX
+        
+        if loopH <= 0 || loopW <= 0 { return }
+        
+        let dataOffsetY = validStartY - startY
+        let dataOffsetX = validStartX - startX
+        
+        for h in 0..<loopH {
+            self.cr[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
+                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
+                    guard let destBase = destPtr.baseAddress,
+                          let srcBase = srcPtr.baseAddress else { return }
+                    
+                    let destStart = destBase.advanced(by: validStartX)
+                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    destStart.update(from: srcStart, count: loopW)
                 }
-                self.cr[startY + h][startX + w] = data[h, w]
             }
         }
     }
@@ -352,19 +400,53 @@ public struct Image16: Sendable {
         var img = YCbCrImage(width: width, height: height)
         
         for y in 0..<height {
-            for x in 0..<width {
-                let offset = img.yOffset(x, y)
-                img.yPlane[offset] = clampU8(self.y[y][x])
+            let srcRow = self.y[y]
+            let destOffset = img.yOffset(0, y)
+            
+            srcRow.withUnsafeBufferPointer { srcPtr in
+                img.yPlane.withUnsafeMutableBufferPointer { destPtr in
+                    guard let srcBase = srcPtr.baseAddress,
+                          let destBase = destPtr.baseAddress else { return }
+                    
+                    let destRowStart = destBase.advanced(by: destOffset)
+                    
+                    for i in 0..<width {
+                        destRowStart[i] = clampU8(srcBase[i])
+                    }
+                }
             }
         }
         
-        for y in 0..<(height / 2) {
-            for x in 0..<(width / 2) {
-                let offset = img.cOffset(x, y)
-                img.cbPlane[offset] = clampU8(self.cb[y][x])
-                img.crPlane[offset] = clampU8(self.cr[y][x])
+        let halfHeight = height / 2
+        let halfWidth = width / 2
+        
+        for y in 0..<halfHeight {
+            let srcCbRow = self.cb[y]
+            let srcCrRow = self.cr[y]
+            let destOffset = img.cOffset(0, y)
+            
+            srcCbRow.withUnsafeBufferPointer { cbPtr in
+                srcCrRow.withUnsafeBufferPointer { crPtr in
+                    img.cbPlane.withUnsafeMutableBufferPointer { destCbPtr in
+                        img.crPlane.withUnsafeMutableBufferPointer { destCrPtr in
+                            guard let cbBase = cbPtr.baseAddress,
+                                  let crBase = crPtr.baseAddress,
+                                  let destCbBase = destCbPtr.baseAddress,
+                                  let destCrBase = destCrPtr.baseAddress else { return }
+                            
+                            let destCbRowStart = destCbBase.advanced(by: destOffset)
+                            let destCrRowStart = destCrBase.advanced(by: destOffset)
+                            
+                            for i in 0..<halfWidth {
+                                destCbRowStart[i] = clampU8(cbBase[i])
+                                destCrRowStart[i] = clampU8(crBase[i])
+                            }
+                        }
+                    }
+                }
             }
         }
+        
         return img
     }
 }
