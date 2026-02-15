@@ -3,61 +3,53 @@ import Testing
 
 // MARK: - Quantize Tests
 
-/// スカラー版の quantize を再実装（テスト用参照実装）
-private func referenceQuantize(_ data: inout Block2D, size: Int, scale: Int) {
+private func referenceQuantize(_ data: inout Block2D, size: Int, q: Quantizer) {
     let total = (size * size)
+    let mul = q.mul
+    let shift = Int32(q.shift)
     for i in 0..<total {
-        let v = Int32(data.data[i])
-        let off = Int32(1 << (scale - 1))
-        if 0 <= v {
-            data.data[i] = Int16((v + off) >> scale)
-        } else {
-            data.data[i] = Int16(-1 * ((-1 * v + off) >> scale))
-        }
+        let val = Int32(data.data[i])
+        let absVal = abs(val)
+        let qVal = (absVal &* mul) &>> shift
+        data.data[i] = Int16(val < 0 ? -1 * qVal : qVal)
     }
 }
 
-/// スカラー版の quantize (SignedMapping版)
-private func referenceQuantizeSignedMapping(_ data: inout Block2D, size: Int, scale: Int) {
+private func referenceQuantizeSignedMapping(_ data: inout Block2D, size: Int, q: Quantizer) {
     let total = (size * size)
+    let mul = q.mul
+    let shift = Int32(q.shift)
     for i in 0..<total {
-        let v = Int32(data.data[i])
-        let off = Int32(1 << (scale - 1))
-        var q: Int16
-        if 0 <= v {
-            q = Int16((v + off) >> scale)
-        } else {
-            q = Int16(-1 * ((-1 * v + off) >> scale))
-        }
+        let val = Int32(data.data[i])
+        let absVal = abs(val)
+        let qVal = (absVal &* mul) &>> shift
+        let v = Int16(val < 0 ? -1 * qVal : qVal)
         
-        let u = UInt16(bitPattern: (q &<< 1) ^ (q >> 15))
+        let u = UInt16(bitPattern: (v &<< 1) ^ (v >> 15))
         data.data[i] = Int16(bitPattern: u)
     }
 }
 
-/// スカラー版の dequantize を再実装（テスト用参照実装）
-private func referenceDequantize(_ data: inout Block2D, size: Int, scale: Int) {
+private func referenceDequantize(_ data: inout Block2D, size: Int, q: Quantizer) {
     let total = (size * size)
+    let step = Int32(q.step)
     for i in 0..<total {
-        data.data[i] = (data.data[i] &<< scale)
+        let val = Int32(data.data[i])
+        data.data[i] = Int16(clamping: (val &* step))
     }
 }
 
-/// スカラー版の dequantize (SignedMapping版)
-private func referenceDequantizeSignedMapping(_ data: inout Block2D, size: Int, scale: Int) {
+private func referenceDequantizeSignedMapping(_ data: inout Block2D, size: Int, q: Quantizer) {
     let total = (size * size)
+    let step = Int32(q.step)
     for i in 0..<total {
-        let v = data.data[i]
-        let u = UInt16(bitPattern: v)
-        let s = Int16(bitPattern: (u >> 1))
-        let m = (-1 * Int16(bitPattern: (u & 1)))
-        let decoded = (s ^ m)
-        data.data[i] = (decoded &<< scale)
+        let uVal = UInt16(bitPattern: data.data[i])
+        let decodedUInt = (uVal >> 1) ^ (0 &- (uVal & 1))
+        let decoded = Int16(bitPattern: decodedUInt)
+        data.data[i] = Int16(clamping: Int32(decoded) &* step)
     }
 }
 
-/// テスト用のブロックデータを生成する
-/// 正・負・ゼロを含むパターンを生成
 private func makeTestBlock(size: Int, seed: Int16) -> Block2D {
     let block = Block2D(width: size, height: size)
     for y in 0..<size {
@@ -69,198 +61,211 @@ private func makeTestBlock(size: Int, seed: Int16) -> Block2D {
     return block
 }
 
-// MARK: - quantizeLow / quantizeMid / quantizeHigh のテスト
+// MARK: - quantizeLow / quantizeMid / quantizeHigh Tests
 
 @Suite("Quantization SIMD Tests")
 struct QuantizeSIMDTests {
 
-    @Test("quantizeLow: 4x4 ブロック", arguments: [1, 2, 3])
-    func quantizeLow4x4(scale: Int) {
+    @Test("quantizeLow: 4x4 block", arguments: [4, 8, 16])
+    func quantizeLow4x4(baseStep: Int) {
         let size = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: 8)
         var expected = actual
 
-        quantizeLow(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 2))
+        quantizeLow(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qLow)
 
-        #expect(actual.data == expected.data, "データが一致しません")
+        #expect(actual.data == expected.data, "data mismatch")
     }
 
-    @Test("quantizeLow: 8x8 ブロック", arguments: [1, 2, 3])
-    func quantizeLow8x8(scale: Int) {
+    @Test("quantizeLow: 8x8 block", arguments: [4, 8, 16])
+    func quantizeLow8x8(baseStep: Int) {
         let size = 8
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: 32)
         var expected = actual
 
-        quantizeLow(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 2))
+        quantizeLow(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qLow)
 
-        #expect(actual.data == expected.data, "データが一致しません")
+        #expect(actual.data == expected.data, "data mismatch")
     }
 
-    @Test("quantizeLow: 16x16 ブロック", arguments: [1, 2, 3])
-    func quantizeLow16x16(scale: Int) {
+    @Test("quantizeLow: 16x16 block", arguments: [4, 8, 16])
+    func quantizeLow16x16(baseStep: Int) {
         let size = 16
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: 128)
         var expected = actual
 
-        quantizeLow(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 2))
+        quantizeLow(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qLow)
 
-        #expect(actual.data == expected.data, "データが一致しません")
+        #expect(actual.data == expected.data, "data mismatch")
     }
 
-    @Test("quantizeLow: 32x32 ブロック", arguments: [1, 2, 3])
-    func quantizeLow32x32(scale: Int) {
+    @Test("quantizeLow: 32x32 block", arguments: [4, 8, 16])
+    func quantizeLow32x32(baseStep: Int) {
         let size = 32
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: 512)
         var expected = actual
 
-        quantizeLow(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 2))
+        quantizeLow(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qLow)
 
-        #expect(actual.data == expected.data, "データが一致しません")
+        #expect(actual.data == expected.data, "data mismatch")
     }
 
-    @Test("quantizeMid: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("quantizeMid: All sizes", arguments: [4, 8, 16, 32])
     func quantizeMidAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeMid(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 3))
+        quantizeMid(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qMid)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("quantizeHigh: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("quantizeHigh: All sizes", arguments: [4, 8, 16, 32])
     func quantizeHighAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeHigh(&actual, size: size, scale: scale)
-        referenceQuantize(&expected, size: size, scale: (scale + 5))
+        quantizeHigh(&actual, qt: qt)
+        referenceQuantize(&expected, size: size, q: qt.qHigh)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("quantizeMid (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("quantizeMid (SignedMapping): All sizes", arguments: [4, 8, 16, 32])
     func quantizeMidSignedMappingAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeMidSignedMapping(&actual, size: size, scale: scale)
-        referenceQuantizeSignedMapping(&expected, size: size, scale: (scale + 3))
+        quantizeMidSignedMapping(&actual, qt: qt)
+        referenceQuantizeSignedMapping(&expected, size: size, q: qt.qMid)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("quantizeHigh (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("quantizeHigh (SignedMapping): All sizes", arguments: [4, 8, 16, 32])
     func quantizeHighSignedMappingAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeHighSignedMapping(&actual, size: size, scale: scale)
-        referenceQuantizeSignedMapping(&expected, size: size, scale: (scale + 5))
+        quantizeHighSignedMapping(&actual, qt: qt)
+        referenceQuantizeSignedMapping(&expected, size: size, q: qt.qHigh)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 }
 
-// MARK: - dequantizeLow / dequantizeMid / dequantizeHigh のテスト
+// MARK: - dequantizeLow / dequantizeMid / dequantizeHigh Tests
 
 @Suite("Dequantization SIMD Tests")
 struct DequantizeSIMDTests {
 
-    @Test("dequantizeLow: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("dequantizeLow: All sizes", arguments: [4, 8, 16, 32])
     func dequantizeLowAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeLow(&actual, size: size, scale: scale)
-        referenceDequantize(&expected, size: size, scale: (scale + 2))
+        dequantizeLow(&actual, qt: qt)
+        referenceDequantize(&expected, size: size, q: qt.qLow)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("dequantizeMid: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("dequantizeMid: All sizes", arguments: [4, 8, 16, 32])
     func dequantizeMidAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeMid(&actual, size: size, scale: scale)
-        referenceDequantize(&expected, size: size, scale: (scale + 3))
+        dequantizeMid(&actual, qt: qt)
+        referenceDequantize(&expected, size: size, q: qt.qMid)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("dequantizeHigh: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("dequantizeHigh: All sizes", arguments: [4, 8, 16, 32])
     func dequantizeHighAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeHigh(&actual, size: size, scale: scale)
-        referenceDequantize(&expected, size: size, scale: (scale + 5))
+        dequantizeHigh(&actual, qt: qt)
+        referenceDequantize(&expected, size: size, q: qt.qHigh)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("dequantizeMid (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("dequantizeMid (SignedMapping): All sizes", arguments: [4, 8, 16, 32])
     func dequantizeMidSignedMappingAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeMidSignedMapping(&actual, size: size, scale: scale)
-        referenceDequantizeSignedMapping(&expected, size: size, scale: (scale + 3))
+        dequantizeMidSignedMapping(&actual, qt: qt)
+        referenceDequantizeSignedMapping(&expected, size: size, q: qt.qMid)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 
-    @Test("dequantizeHigh (SignedMapping): 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("dequantizeHigh (SignedMapping): All sizes", arguments: [4, 8, 16, 32])
     func dequantizeHighSignedMappingAllSizes(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeHighSignedMapping(&actual, size: size, scale: scale)
-        referenceDequantizeSignedMapping(&expected, size: size, scale: (scale + 5))
+        dequantizeHighSignedMapping(&actual, qt: qt)
+        referenceDequantizeSignedMapping(&expected, size: size, q: qt.qHigh)
 
-        #expect(actual.data == expected.data, "size=\(size) データが一致しません")
+        #expect(actual.data == expected.data, "size=\(size) data mismatch")
     }
 }
 
-// MARK: - ラウンドトリップテスト
+// MARK: - Roundtrip Tests
 
 @Suite("Quantize/Dequantize Roundtrip Tests")
 struct QuantRoundtripTests {
 
-    @Test("quantize→dequantize ラウンドトリップ: 全サイズ", arguments: [4, 8, 16, 32])
+    @Test("quantize->dequantize Roundtrip: All sizes", arguments: [4, 8, 16, 32])
     func roundtrip(size: Int) {
-        let scale = 2
+        let baseStep = 4
+        let qt = QuantizationTable(baseStep: baseStep)
 
         var block = makeTestBlock(size: size, seed: Int16(size))
         let original = block
 
-        // quantize (Low: scale + 2)
-        quantizeLow(&block, size: size, scale: scale)
-        // dequantize (Low: scale + 2)
-        dequantizeLow(&block, size: size, scale: scale)
+        // quantize (Low)
+        quantizeLow(&block, qt: qt)
+        // dequantize (Low)
+        dequantizeLow(&block, qt: qt)
 
-        // ラウンドトリップ後、量子化誤差の範囲内であることを確認
-        let totalScale = (scale + 2)
-        let maxError = Int16(1 << totalScale)
+        // Confirm it's within the quantization error range after roundtrip
+        let maxError = Int16(qt.qLow.step)
         let total = (size * size)
         for i in 0..<total {
             let diff = abs(Int32(block.data[i]) - Int32(original.data[i]))
-            #expect(diff <= Int32(maxError), "size=\(size) [\(i)] 誤差 \(diff) が最大許容値 \(maxError) を超えました")
+            #expect(diff <= Int32(maxError), "size=\(size) [\(i)] error \(diff) exceeded max allowed \(maxError)")
         }
     }
 }

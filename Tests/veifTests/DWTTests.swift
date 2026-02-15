@@ -4,7 +4,7 @@ import Testing
 @Suite("DWT SIMD Tests")
 struct DWTTests {
 
-    /// テストデータ生成
+    /// Generate test data
     private func makeTestData(size: Int, seed: Int16) -> [Int16] {
         var data = [Int16](repeating: 0, count: size)
         for i in 0..<size {
@@ -24,7 +24,7 @@ struct DWTTests {
             invLift53(ptr, count: size, stride: 1)
         }
         
-        #expect(data == original, "Seed: \(seed) - データが元に戻りません")
+        #expect(data == original, "Seed: \(seed) - data recovery failed")
     }
 
     @Test("lift53 / invLift53 Roundtrip: size=16 (SIMD8)", arguments: [0, 10, 100])
@@ -38,7 +38,7 @@ struct DWTTests {
             invLift53(ptr, count: size, stride: 1)
         }
         
-        #expect(data == original, "Seed: \(seed) - データが元に戻りません")
+        #expect(data == original, "Seed: \(seed) - data recovery failed")
     }
 
     @Test("lift53 / invLift53 Roundtrip: size=32 (SIMD16)", arguments: [0, 10, 100])
@@ -52,7 +52,7 @@ struct DWTTests {
             invLift53(ptr, count: size, stride: 1)
         }
         
-        #expect(data == original, "Seed: \(seed) - データが元に戻りません")
+        #expect(data == original, "Seed: \(seed) - data recovery failed")
     }
     
     @Test("lift53 / invLift53 Roundtrip: size=4 (Scalar Fallback)", arguments: [0, 10])
@@ -66,7 +66,7 @@ struct DWTTests {
             invLift53(ptr, count: size, stride: 1)
         }
         
-        #expect(data == original, "Seed: \(seed) - データが元に戻りません")
+        #expect(data == original, "Seed: \(seed) - data recovery failed")
     }
     
     @Test("dwt2d / invDwt2d Roundtrip: size=32", arguments: [0])
@@ -83,6 +83,6 @@ struct DWTTests {
         let sub = dwt2d(&block, size: size)
         let restored = invDwt2d(sub)
         
-        #expect(restored.data == originalData, "2D DWT ラウンドトリップ失敗")
+        #expect(restored.data == originalData, "2D DWT roundtrip failed")
     }
 }
