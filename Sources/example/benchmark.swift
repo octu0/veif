@@ -32,7 +32,7 @@ func runBenchmark(srcURL: URL) async {
         runJPEGSingleSizeComparison(q: q, refLarge: refLarge)
     }
 
-    print("\n=== Custom Codec Comparison ===")
+    print("\n=== veif Comparison ===")
     for bitrate in stride(from: 50, through: 300, by: 50) {
         await runCustomCodecOneComparison(bitrate: bitrate, originImg: originImg)
     }
@@ -44,7 +44,7 @@ func runBenchmark(srcURL: URL) async {
         runJPEGMultiSizeComparison(q: q, refLarge: refLarge, refMid: refMid, refSmall: refSmall)
     }
 
-    print("\n=== Custom Codec Comparison ===")
+    print("\n=== veif Comparison ===")
     for bitrate in stride(from: 50, through: 300, by: 50) {
         await runCustomCodecLayersComparison(bitrate: bitrate, originImg: originImg, refMid: refMid, refSmall: refSmall)
     }
@@ -53,7 +53,7 @@ func runBenchmark(srcURL: URL) async {
 func runJPEGSingleSizeComparison(q: Int, refLarge: YCbCrImage) {
     guard let cgImage = yCbCrToCGImage(img: refLarge) else { return }
 
-    let iterations = 100
+    let iterations = 1000
     var totalDuration: Double = 0
     let options = [kCGImageDestinationLossyCompressionQuality: (Double(q) / 100.0)] as CFDictionary
 
@@ -71,22 +71,28 @@ func runJPEGSingleSizeComparison(q: Int, refLarge: YCbCrImage) {
         CGImageDestinationFinalize(loopDest)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
-    let duration = totalDuration / Double(iterations)
+    let encDuration = totalDuration / Double(iterations)
     let sizeKB = (Double(encodedBytes.count) / 1024.0)
 
+    var totalDecDuration: Double = 0
+    for _ in 0..<iterations {
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = try? pngToYCbCr(data: encodedBytes)
+        totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+    }
+    let decDuration = totalDecDuration / Double(iterations)
+
     guard let decodedYCbCr = try? pngToYCbCr(data: encodedBytes) else { return }
-
     let jpgLarge = decodedYCbCr
-
     let l = calcMetrics(ref: refLarge, target: jpgLarge)
 
-    printSingleMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, duration: duration, l: l)
+    printSingleMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, enc: encDuration, dec: decDuration, l: l)
 }
 
 func runJPEGMultiSizeComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage, refSmall: YCbCrImage) {
     guard let cgImage = yCbCrToCGImage(img: refLarge) else { return }
 
-    let iterations = 100
+    let iterations = 1000
     var totalDuration: Double = 0
     let options = [kCGImageDestinationLossyCompressionQuality: (Double(q) / 100.0)] as CFDictionary
 
@@ -104,8 +110,16 @@ func runJPEGMultiSizeComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage
         CGImageDestinationFinalize(loopDest)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
-    let duration = totalDuration / Double(iterations)
+    let encDuration = totalDuration / Double(iterations)
     let sizeKB = (Double(encodedBytes.count) / 1024.0)
+    
+    var totalDecDuration: Double = 0
+    for _ in 0..<iterations {
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = try? pngToYCbCr(data: encodedBytes)
+        totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+    }
+    let decDuration = totalDecDuration / Double(iterations)
 
     guard let decodedYCbCr = try? pngToYCbCr(data: encodedBytes) else { return }
 
@@ -117,14 +131,14 @@ func runJPEGMultiSizeComparison(q: Int, refLarge: YCbCrImage, refMid: YCbCrImage
     let m = calcMetrics(ref: refMid, target: jpgMid)
     let s = calcMetrics(ref: refSmall, target: jpgSmall)
 
-    printMultiMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, duration: duration, l: l, m: m, s: s)
+    printMultiMetrics(prefix: "JPEG Q", val: q, sizeKB: sizeKB, enc: encDuration, dec: decDuration, l: l, m: m, s: s)
 }
 
 
 func runCustomCodecOneComparison(bitrate: Int, originImg: YCbCrImage) async {
     let targetBits = (bitrate * 1000)
 
-    let iterations = 100
+    let iterations = 1000
     var totalDuration: Double = 0
     
     guard let out = try? await encodeOne(img: originImg, maxbitrate: targetBits) else {
@@ -136,9 +150,16 @@ func runCustomCodecOneComparison(bitrate: Int, originImg: YCbCrImage) async {
         _ = try? await encodeOne(img: originImg, maxbitrate: targetBits)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
-    let duration = totalDuration / Double(iterations)
-
+    let encDuration = totalDuration / Double(iterations)
     let sizeKB = (Double(out.count) / 1024.0)
+    
+    var totalDecDuration: Double = 0
+    for _ in 0..<iterations {
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = try? await decodeOne(r: out)
+        totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+    }
+    let decDuration = totalDecDuration / Double(iterations)
 
     guard let decLarge = try? await decodeOne(r: out) else {
         fatalError("Failed to decode")
@@ -146,13 +167,13 @@ func runCustomCodecOneComparison(bitrate: Int, originImg: YCbCrImage) async {
 
     let l = calcMetrics(ref: originImg, target: decLarge)
 
-    printSingleMetrics(prefix: "MY   Rate", val: bitrate, sizeKB: sizeKB, duration: duration, l: l)
+    printSingleMetrics(prefix: "veif   Rate", val: bitrate, sizeKB: sizeKB, enc: encDuration, dec: decDuration, l: l)
 }
 
 func runCustomCodecLayersComparison(bitrate: Int, originImg: YCbCrImage, refMid: YCbCrImage, refSmall: YCbCrImage) async {
     let targetBits = (bitrate * 1000)
 
-    let iterations = 100
+    let iterations = 1000
     var totalDuration: Double = 0
     
     guard let out = try? await encode(img: originImg, maxbitrate: targetBits) else {
@@ -164,9 +185,16 @@ func runCustomCodecLayersComparison(bitrate: Int, originImg: YCbCrImage, refMid:
         _ = try? await encode(img: originImg, maxbitrate: targetBits)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
-    let duration = totalDuration / Double(iterations)
-
+    let encDuration = totalDuration / Double(iterations)
     let sizeKB = (Double(out.count) / 1024.0)
+    
+    var totalDecDuration: Double = 0
+    for _ in 0..<iterations {
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = try? await decode(r: out)
+        totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+    }
+    let decDuration = totalDecDuration / Double(iterations)
 
     guard let (decSmall, decMid, decLarge) = try? await decode(r: out) else {
         fatalError("Failed to decode")
@@ -176,24 +204,26 @@ func runCustomCodecLayersComparison(bitrate: Int, originImg: YCbCrImage, refMid:
     let m = calcMetrics(ref: refMid, target: decMid)
     let s = calcMetrics(ref: refSmall, target: decSmall)
 
-    printMultiMetrics(prefix: "MY   Rate", val: bitrate, sizeKB: sizeKB, duration: duration, l: l, m: m, s: s)
+    printMultiMetrics(prefix: "veif   Rate", val: bitrate, sizeKB: sizeKB, enc: encDuration, dec: decDuration, l: l, m: m, s: s)
 }
 
-func printSingleMetrics(prefix: String, val: Int, sizeKB: Double, duration: Double, l: BenchmarkMetrics) {
+func printSingleMetrics(prefix: String, val: Int, sizeKB: Double, enc: Double, dec: Double, l: BenchmarkMetrics) {
+    let total = enc + dec
     if prefix == "JPEG Q" {
-        print(String(format: "%@=%3d Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
+        print(String(format: "%@=%3d Size=%6.2fKB Enc=%6.2fms Dec=%6.2fms Total=%6.2fms", prefix, val, sizeKB, enc, dec, total))
     } else {
-        print(String(format: "%@=%4d k Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
+        print(String(format: "%@=%4d k Size=%6.2fKB Enc=%6.2fms Dec=%6.2fms Total=%6.2fms", prefix, val, sizeKB, enc, dec, total))
     }
 
     printLayerMetric(label: "L", m: l)
 }
 
-func printMultiMetrics(prefix: String, val: Int, sizeKB: Double, duration: Double, l: BenchmarkMetrics, m: BenchmarkMetrics, s: BenchmarkMetrics) {
+func printMultiMetrics(prefix: String, val: Int, sizeKB: Double, enc: Double, dec: Double, l: BenchmarkMetrics, m: BenchmarkMetrics, s: BenchmarkMetrics) {
+    let total = enc + dec
     if prefix == "JPEG Q" {
-        print(String(format: "%@=%3d Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
+        print(String(format: "%@=%3d Size=%6.2fKB Enc=%6.2fms Dec=%6.2fms Total=%6.2fms", prefix, val, sizeKB, enc, dec, total))
     } else {
-        print(String(format: "%@=%4d k Size=%6.2fKB Time=%6.2fms", prefix, val, sizeKB, duration))
+        print(String(format: "%@=%4d k Size=%6.2fKB Enc=%6.2fms Dec=%6.2fms Total=%6.2fms", prefix, val, sizeKB, enc, dec, total))
     }
 
     printLayerMetric(label: "L", m: l)
