@@ -1,79 +1,78 @@
 
 // MARK: - Quantization
 
-let quantizeLowOffset = 0
-let quantizeMidOffset = 1
-let quantizeHighOffset = 3
-
-@inline(__always)
-public func quantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + quantizeLowOffset))
-}
-
-@inline(__always)
-public func quantizeLowSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    quantizeSignedMapping(&block, size: size, scale: (scale + quantizeLowOffset))
-}
-
-@inline(__always)
-public func quantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + quantizeMidOffset))
-}
-
-@inline(__always)
-public func quantizeMidSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    quantizeSignedMapping(&block, size: size, scale: (scale + quantizeMidOffset))
-}
-
-@inline(__always)
-public func quantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
-    quantize(&block, size: size, scale: (scale + quantizeHighOffset))
-}
-
-@inline(__always)
-public func quantizeHighSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    quantizeSignedMapping(&block, size: size, scale: (scale + quantizeHighOffset))
-}
-
-@inline(__always)
-internal func quantize(_ block: inout Block2D, size: Int, scale: Int) {
-    #if arch(arm64) || arch(x86_64)
-    let total = (size * size)
-    switch total {
-    case 16:
-        quantizeSIMD4(&block, scale: scale)
-    case 64:
-        quantizeSIMD8(&block, scale: scale)
-    case 256:
-        quantizeSIMD16(&block, scale: scale)
-    case 1024:
-        quantizeSIMD32(&block, scale: scale)
-    default:
-        quantizeScalar(&block, size: size, scale: scale)
+struct Quantizer: Sendable {
+    public let step: Int16
+    public let mul: Int32
+    public let shift: Int16 = 16
+    
+    public init(step: Int) {
+        self.step = Int16(step)
+        self.mul = Int32((1 << 16) / step)
     }
+}
+
+struct QuantizationTable: Sendable {
+    public let step: Int16
+    public let qLow: Quantizer
+    public let qMid: Quantizer
+    public let qHigh: Quantizer
+    
+    public init(baseStep: Int) {
+        let s = max(1, baseStep)
+        self.step = Int16(s)
+        self.qLow  = Quantizer(step: s)
+        self.qMid  = Quantizer(step: s * 2)
+        self.qHigh = Quantizer(step: s * 4)
+    }
+}
+
+
+@inline(__always)
+func quantizeLow(_ block: inout Block2D, qt: QuantizationTable) {
+    quantize(&block, q: qt.qLow)
+}
+
+@inline(__always)
+func quantizeLowSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    quantizeSignedMapping(&block, q: qt.qLow)
+}
+
+@inline(__always)
+func quantizeMid(_ block: inout Block2D, qt: QuantizationTable) {
+    quantize(&block, q: qt.qMid)
+}
+
+@inline(__always)
+func quantizeMidSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    quantizeSignedMapping(&block, q: qt.qMid)
+}
+
+@inline(__always)
+func quantizeHigh(_ block: inout Block2D, qt: QuantizationTable) {
+    quantize(&block, q: qt.qHigh)
+}
+
+@inline(__always)
+func quantizeHighSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    quantizeSignedMapping(&block, q: qt.qHigh)
+}
+
+@inline(__always)
+internal func quantize(_ block: inout Block2D, q: Quantizer) {
+    #if arch(arm64) || arch(x86_64)
+    quantizeSIMD(&block, q: q)
     #else
-    quantizeScalar(&block, size: size, scale: scale)
+    quantizeScalar(&block, q: q)
     #endif
 }
 
 @inline(__always)
-internal func quantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+internal func quantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
     #if arch(arm64) || arch(x86_64)
-    let total = (size * size)
-    switch total {
-    case 16:
-        quantizeSIMD4SignedMapping(&block, scale: scale)
-    case 64:
-        quantizeSIMD8SignedMapping(&block, scale: scale)
-    case 256:
-        quantizeSIMD16SignedMapping(&block, scale: scale)
-    case 1024:
-        quantizeSIMD32SignedMapping(&block, scale: scale)
-    default:
-        quantizeScalarSignedMapping(&block, size: size, scale: scale)
-    }
+    quantizeSIMDSignedMapping(&block, q: q)
     #else
-    quantizeScalarSignedMapping(&block, size: size, scale: scale)
+    quantizeScalarSignedMapping(&block, q: q)
     #endif
 }
 
@@ -82,181 +81,80 @@ internal func quantizeSignedMapping(_ block: inout Block2D, size: Int, scale: In
 #if arch(arm64) || arch(x86_64)
 
 @inline(__always)
-internal func quantizeSIMD4(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD4<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
-    let zero = SIMD4<Int16>.zero
-    let negOne = SIMD4<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 4) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD4<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD4<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
-    let zero = SIMD4<Int16>.zero
-    let negOne = SIMD4<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 4) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            quantized = (quantized &<< 1) ^ (quantized &>> 15)
-            
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD4<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD8(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD8<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
+private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32) -> SIMD8<Int16> {
     let zero = SIMD8<Int16>.zero
-    let negOne = SIMD8<Int16>(repeating: -1)
+    let isNeg = vec .< zero
+    let absVec = vec.replacing(with: 0 &- vec, where: isNeg)
+    
+    let low32 = SIMD4<Int32>(
+        Int32(absVec[0]), Int32(absVec[1]), Int32(absVec[2]), Int32(absVec[3])
+    )
+    let high32 = SIMD4<Int32>(
+        Int32(absVec[4]), Int32(absVec[5]), Int32(absVec[6]), Int32(absVec[7])
+    )
+    
+    let mulVec = SIMD4<Int32>(repeating: mul)
+    let shiftVec = SIMD4<Int32>(repeating: shift)
+    
+    let resLow32 = (low32 &* mulVec) &>> shiftVec
+    let resHigh32 = (high32 &* mulVec) &>> shiftVec
+    
+    let res = SIMD8<Int16>(
+        Int16(resLow32[0]), Int16(resLow32[1]), Int16(resLow32[2]), Int16(resLow32[3]),
+        Int16(resHigh32[0]), Int16(resHigh32[1]), Int16(resHigh32[2]), Int16(resHigh32[3])
+    )
+    
+    return res.replacing(with: 0 &- res, where: isNeg)
+}
 
+private func quantizeSIMD(_ block: inout Block2D, q: Quantizer) {
+    let mul = q.mul
+    let shift = Int32(q.shift)
+    let count = block.data.count
+    
     block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 8) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
+        var i = 0
+        while (i + 8) <= count {
+            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i+8)])
+            let vec = SIMD8<Int16>(ptr)
             
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD8<Int16>.self)
+            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+            
+            let rawBase = buf.baseAddress!.advanced(by: i)
+            let rawPtr = UnsafeMutableRawPointer(rawBase).assumingMemoryBound(to: SIMD8<Int16>.self)
+            rawPtr.pointee = res
+            
+            i += 8
+        }
+        while i < count {
+            let val = Int32(buf[i])
+            let absVal = abs(val)
+            let qVal = (absVal &* mul) &>> shift
+            buf[i] = Int16(val < 0 ? -qVal : qVal)
+            i += 1
         }
     }
 }
 
-@inline(__always)
-internal func quantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD8<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
-    let zero = SIMD8<Int16>.zero
-    let negOne = SIMD8<Int16>(repeating: -1)
-
+private func quantizeSIMDSignedMapping(_ block: inout Block2D, q: Quantizer) {
+    let mul = q.mul
+    let shift = Int32(q.shift)
+    let count = block.data.count
+    
     block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 8) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            quantized = (quantized &<< 1) ^ (quantized &>> 15)
+        var i = 0
+        while (i + 8) <= count {
+            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i+8)])
+            let vec = SIMD8<Int16>(ptr)
             
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD8<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD16(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD16<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
-    let zero = SIMD16<Int16>.zero
-    let negOne = SIMD16<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 16) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
+            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+            let mask = (res &<< 1) ^ (res &>> 15)
             
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD16<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD16<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
-    let zero = SIMD16<Int16>.zero
-    let negOne = SIMD16<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 16) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            quantized = (quantized &<< 1) ^ (quantized &>> 15)
+            let rawBase = buf.baseAddress!.advanced(by: i)
+            let rawPtr = UnsafeMutableRawPointer(rawBase).assumingMemoryBound(to: SIMD8<Int16>.self)
+            rawPtr.pointee = mask
             
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD16<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD32(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD32<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
-    let zero = SIMD32<Int16>.zero
-    let negOne = SIMD32<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 32) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD32<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func quantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
-    let offVec = SIMD32<Int16>(repeating: Int16(1 << (scale - 1)))
-    let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
-    let zero = SIMD32<Int16>.zero
-    let negOne = SIMD32<Int16>(repeating: -1)
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 32) {
-            let p = base.advanced(by: i)
-            let vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
-            let isNeg = vec .< zero
-            let absVec = vec.replacing(with: negOne &* vec, where: isNeg)
-            var quantized = (absVec &+ offVec) &>> scaleVec
-            quantized = quantized.replacing(with: negOne &* quantized, where: isNeg)
-            quantized = (quantized &<< 1) ^ (quantized &>> 15)
-            
-            UnsafeMutableRawPointer(p).storeBytes(of: quantized, as: SIMD32<Int16>.self)
+            i += 8
         }
     }
 }
@@ -266,110 +164,81 @@ internal func quantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
 // MARK: - Quantization Scalar (fallback)
 
 @inline(__always)
-internal func quantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
-    let total = (size * size)
+internal func quantizeScalar(_ block: inout Block2D, q: Quantizer) {
+    let total = block.data.count
+    let mul = q.mul
+    let shift = Int32(q.shift)
+    
     for i in 0..<total {
-        let v = Int32(block.data[i])
-        let off = Int32(1 << (scale - 1))
-        var q: Int16
-        if 0 <= v {
-            q = Int16((v + off) >> scale)
-        } else {
-            q = Int16(-1 * ((-1 * v + off) >> scale))
-        }
-        
-        block.data[i] = q
+        let val = Int32(block.data[i])
+        let absVal = abs(val)
+        let qVal = (absVal &* mul) &>> shift
+        block.data[i] = Int16(val < 0 ? -qVal : qVal)
     }
 }
 
 @inline(__always)
-internal func quantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    let total = (size * size)
+internal func quantizeScalarSignedMapping(_ block: inout Block2D, q: Quantizer) {
+    let total = block.data.count
+    let mul = q.mul
+    let shift = Int32(q.shift)
+    
     for i in 0..<total {
-        let v = Int32(block.data[i])
-        let off = Int32(1 << (scale - 1))
-        var q: Int16
-        if 0 <= v {
-            q = Int16((v + off) >> scale)
-        } else {
-            q = Int16(-1 * ((-1 * v + off) >> scale))
-        }
-        
-        block.data[i] = Int16(bitPattern: UInt16(bitPattern: (q &<< 1) ^ (q >> 15)))
+        let val = Int32(block.data[i])
+        let absVal = abs(val)
+        let qVal = (absVal &* mul) &>> shift
+        let v = Int16(val < 0 ? -qVal : qVal)
+        block.data[i] = Int16(bitPattern: UInt16(bitPattern: (v &<< 1) ^ (v >> 15)))
     }
 }
 
 // MARK: - Dequantization
 
 @inline(__always)
-public func dequantizeLow(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + quantizeLowOffset))
+func dequantizeLow(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantize(&block, q: qt.qLow)
 }
 
 @inline(__always)
-public func dequantizeLowSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeLowOffset))
+func dequantizeLowSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantizeSignedMapping(&block, q: qt.qLow)
 }
 
 @inline(__always)
-public func dequantizeMid(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + quantizeMidOffset))
+func dequantizeMid(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantize(&block, q: qt.qMid)
 }
 
 @inline(__always)
-public func dequantizeMidSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeMidOffset))
+func dequantizeMidSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantizeSignedMapping(&block, q: qt.qMid)
 }
 
 @inline(__always)
-public func dequantizeHigh(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantize(&block, size: size, scale: (scale + quantizeHighOffset))
+func dequantizeHigh(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantize(&block, q: qt.qHigh)
 }
 
 @inline(__always)
-public func dequantizeHighSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    dequantizeSignedMapping(&block, size: size, scale: (scale + quantizeHighOffset))
+func dequantizeHighSignedMapping(_ block: inout Block2D, qt: QuantizationTable) {
+    dequantizeSignedMapping(&block, q: qt.qHigh)
 }
 
 @inline(__always)
-internal func dequantize(_ block: inout Block2D, size: Int, scale: Int) {
+internal func dequantize(_ block: inout Block2D, q: Quantizer) {
     #if arch(arm64) || arch(x86_64)
-    let total = (size * size)
-    switch total {
-    case 16:
-        dequantizeSIMD4(&block, scale: scale)
-    case 64:
-        dequantizeSIMD8(&block, scale: scale)
-    case 256:
-        dequantizeSIMD16(&block, scale: scale)
-    case 1024:
-        dequantizeSIMD32(&block, scale: scale)
-    default:
-        dequantizeScalar(&block, size: size, scale: scale)
-    }
+    dequantizeSIMD(&block, q: q)
     #else
-    dequantizeScalar(&block, size: size, scale: scale)
+    dequantizeScalar(&block, q: q)
     #endif
 }
 
 @inline(__always)
-internal func dequantizeSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
+internal func dequantizeSignedMapping(_ block: inout Block2D, q: Quantizer) {
     #if arch(arm64) || arch(x86_64)
-    let total = (size * size)
-    switch total {
-    case 16:
-        dequantizeSIMD4SignedMapping(&block, scale: scale)
-    case 64:
-        dequantizeSIMD8SignedMapping(&block, scale: scale)
-    case 256:
-        dequantizeSIMD16SignedMapping(&block, scale: scale)
-    case 1024:
-        dequantizeSIMD32SignedMapping(&block, scale: scale)
-    default:
-        dequantizeScalarSignedMapping(&block, size: size, scale: scale)
-    }
+    dequantizeSIMDSignedMapping(&block, q: q)
     #else
-    dequantizeScalarSignedMapping(&block, size: size, scale: scale)
+    dequantizeScalarSignedMapping(&block, q: q)
     #endif
 }
 
@@ -378,145 +247,80 @@ internal func dequantizeSignedMapping(_ block: inout Block2D, size: Int, scale: 
 #if arch(arm64) || arch(x86_64)
 
 @inline(__always)
-internal func dequantizeSIMD4(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
+private func performDequantizeSIMD8(_ vec: SIMD8<Int16>, step: Int32) -> SIMD8<Int16> {
+    let vLow32 = SIMD4<Int32>(
+        Int32(vec[0]), Int32(vec[1]), Int32(vec[2]), Int32(vec[3])
+    )
+    let vHigh32 = SIMD4<Int32>(
+        Int32(vec[4]), Int32(vec[5]), Int32(vec[6]), Int32(vec[7])
+    )
+    
+    let stepVec = SIMD4<Int32>(repeating: step)
+    let rLow32 = vLow32 &* stepVec
+    let rHigh32 = vHigh32 &* stepVec
+    
+    return SIMD8<Int16>(
+        Int16(clamping: rLow32[0]), Int16(clamping: rLow32[1]), Int16(clamping: rLow32[2]), Int16(clamping: rLow32[3]),
+        Int16(clamping: rHigh32[0]), Int16(clamping: rHigh32[1]), Int16(clamping: rHigh32[2]), Int16(clamping: rHigh32[3])
+    )
+}
 
+private func dequantizeSIMD(_ block: inout Block2D, q: Quantizer) {
+    let step = Int32(q.step)
+    let count = block.data.count
+    
     block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 4) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
+        var i = 0
+        while (i + 8) <= count {
+            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i+8)])
+            let vec = SIMD8<Int16>(ptr)
             
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD4<Int16>.self)
+            let res = performDequantizeSIMD8(vec, step: step)
+            
+            let rawBase = buf.baseAddress!.advanced(by: i)
+            let rawPtr = UnsafeMutableRawPointer(rawBase).assumingMemoryBound(to: SIMD8<Int16>.self)
+            rawPtr.pointee = res
+            
+            i += 8
+        }
+        
+        while i < count {
+            let val = Int32(buf[i])
+            let res = val &* step
+            buf[i] = Int16(clamping: res)
+            i += 1
         }
     }
 }
 
-@inline(__always)
-internal func dequantizeSIMD4SignedMapping(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD4<Int16>(repeating: Int16(scale))
-
+private func dequantizeSIMDSignedMapping(_ block: inout Block2D, q: Quantizer) {
+    let step = Int32(q.step)
+    let count = block.data.count
+    
     block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 4) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD4<Int16>.self)
+        var i = 0
+        while (i + 8) <= count {
+            let ptr = UnsafeBufferPointer(rebasing: buf[i..<(i+8)])
+            let vec = SIMD8<Int16>(ptr)
             
-            let s = vec &>> 1
-            let m = 0 &- (vec & 1)
-            vec = s ^ m
+            let mask = 0 &- (vec & 1) // 奇数なら全ビット1 (-1), 偶数なら0
+            let logicalShift = (vec &>> 1) & 0x7FFF // 論理右シフト
+            let decoded = logicalShift ^ mask
             
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD4<Int16>.self)
+            let res = performDequantizeSIMD8(decoded, step: step)
+            
+            let rawBase = buf.baseAddress!.advanced(by: i)
+            let rawPtr = UnsafeMutableRawPointer(rawBase).assumingMemoryBound(to: SIMD8<Int16>.self)
+            rawPtr.pointee = res
+            
+            i += 8
         }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD8(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 8) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD8<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD8SignedMapping(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD8<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 8) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD8<Int16>.self)
-            
-            let s = vec &>> 1
-            let m = 0 &- (vec & 1)
-            vec = s ^ m
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD8<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD16(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 16) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD16<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD16SignedMapping(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD16<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 16) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD16<Int16>.self)
-            
-            let s = vec &>> 1
-            let m = 0 &- (vec & 1)
-            vec = s ^ m
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD16<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD32(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 32) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD32<Int16>.self)
-        }
-    }
-}
-
-@inline(__always)
-internal func dequantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) {
-    let scaleVec = SIMD32<Int16>(repeating: Int16(scale))
-
-    block.data.withUnsafeMutableBufferPointer { buf in
-        guard let base = buf.baseAddress else { return }
-        for i in stride(from: 0, to: buf.count, by: 32) {
-            let p = base.advanced(by: i)
-            var vec = UnsafeRawPointer(p).load(as: SIMD32<Int16>.self)
-            
-            let s = vec &>> 1
-            let m = 0 &- (vec & 1)
-            vec = s ^ m
-            
-            vec = vec &<< scaleVec
-            UnsafeMutableRawPointer(p).storeBytes(of: vec, as: SIMD32<Int16>.self)
+        
+        while i < count {
+            let val = Int32(buf[i])
+            let res = val &* step
+            buf[i] = Int16(clamping: res)
+            i += 1
         }
     }
 }
@@ -526,22 +330,29 @@ internal func dequantizeSIMD32SignedMapping(_ block: inout Block2D, scale: Int) 
 // MARK: - Dequantization Scalar (fallback)
 
 @inline(__always)
-internal func dequantizeScalar(_ block: inout Block2D, size: Int, scale: Int) {
-    let total = (size * size)
-    for i in 0..<total {
-        block.data[i] = (block.data[i] &<< scale)
+internal func dequantizeScalar(_ block: inout Block2D, q: Quantizer) {
+    let step = Int32(q.step)
+    let total = block.data.count
+    
+    block.data.withUnsafeMutableBufferPointer { ptr in
+        for i in 0..<total {
+            let val = Int32(ptr[i])
+            ptr[i] = Int16(clamping: (val &* step))
+        }
     }
 }
 
 @inline(__always)
-internal func dequantizeScalarSignedMapping(_ block: inout Block2D, size: Int, scale: Int) {
-    let total = (size * size)
-    for i in 0..<total {
-        var v = block.data[i]
-        let u = UInt16(bitPattern: v)
-        let s = Int16(bitPattern: (u >> 1))
-        let m = (-1 * Int16(bitPattern: (u & 1)))
-        v = (s ^ m)
-        block.data[i] = (v &<< scale)
+internal func dequantizeScalarSignedMapping(_ block: inout Block2D, q: Quantizer) {
+    let step = Int32(q.step)
+    let total = block.data.count
+    
+    block.data.withUnsafeMutableBufferPointer { ptr in
+        for i in 0..<total {
+            let uVal = UInt16(bitPattern: ptr[i])
+            let decodedUInt = (uVal >> 1) ^ (0 &- (uVal & 1))
+            let decoded = Int16(bitPattern: decodedUInt)
+            ptr[i] = Int16(clamping: Int32(decoded) &* step)
+        }
     }
 }

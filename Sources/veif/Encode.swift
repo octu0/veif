@@ -24,12 +24,12 @@ func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
     }
 }
 
-func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, scale: Int) throws -> Block2D {
+func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws -> Block2D {
     var sub = dwt2d(&block, size: size)
     
-    quantizeMidSignedMapping(&sub.hl, size: sub.size, scale: scale)
-    quantizeMidSignedMapping(&sub.lh, size: sub.size, scale: scale)
-    quantizeHighSignedMapping(&sub.hh, size: sub.size, scale: scale)
+    quantizeMidSignedMapping(&sub.hl, qt: qt)
+    quantizeMidSignedMapping(&sub.lh, qt: qt)
+    quantizeHighSignedMapping(&sub.hh, qt: qt)
     
     let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncode(rw: rw, block: sub.hl, size: sub.size)
@@ -40,13 +40,13 @@ func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, scale:
     return sub.ll
 }
 
-func transformBase(data: NSMutableData, block: inout Block2D, size: Int, scale: Int) throws {
+func transformBase(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws {
     var sub = dwt2d(&block, size: size)
     
-    quantizeLow(&sub.ll, size: sub.size, scale: scale)
-    quantizeMidSignedMapping(&sub.hl, size: sub.size, scale: scale)
-    quantizeMidSignedMapping(&sub.lh, size: sub.size, scale: scale)
-    quantizeHighSignedMapping(&sub.hh, size: sub.size, scale: scale)
+    quantizeLow(&sub.ll, qt: qt)
+    quantizeMidSignedMapping(&sub.hl, qt: qt)
+    quantizeMidSignedMapping(&sub.lh, qt: qt)
+    quantizeHighSignedMapping(&sub.hh, qt: qt)
     
     let rw = RiceWriter(bw: BitWriter(data: data))
     blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)
@@ -56,7 +56,7 @@ func transformBase(data: NSMutableData, block: inout Block2D, size: Int, scale: 
     rw.flush()
 }
 
-func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) throws -> (Data, Block2D) {
+func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> (Data, Block2D) {
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
         let row = rows(w, (h + i), size)
@@ -64,12 +64,12 @@ func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) th
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
-    let ll = try transformLayer(data: data, block: &block, size: size, scale: scale)
+    let ll = try transformLayer(data: data, block: &block, size: size, qt: qt)
     
     return (data as Data, ll)
 }
 
-func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) throws -> Data {
+func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> Data {
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
         let row = rows(w, (h + i), size)
@@ -77,12 +77,12 @@ func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, scale: Int) thr
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
-    try transformBase(data: data, block: &block, size: size, scale: scale)
+    try transformBase(data: data, block: &block, size: size, qt: qt)
     
     return data as Data
 }
 
-func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, Image16) {
+func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> (Data, Image16) {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -98,7 +98,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, I
             group.addTask {
                 var rowResults: [(Data, Block2D, Int, Int)] = []
                 for w in stride(from: 0, to: dx, by: size) {
-                    let (data, ll) = try transformLayerFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
+                    let (data, ll) = try transformLayerFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, ll, w, h))
                 }
                 return (h, rowResults)
@@ -125,7 +125,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, I
             group.addTask {
                 var rowResults: [(Data, Block2D, Int, Int)] = []
                 for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
+                    let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, ll, w, h))
                 }
                 return (h, rowResults)
@@ -152,7 +152,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, I
             group.addTask {
                 var rowResults: [(Data, Block2D, Int, Int)] = []
                 for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
+                    let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, ll, w, h))
                 }
                 return (h, rowResults)
@@ -176,7 +176,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, I
     var out = Data()
     withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt8(scale).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
     
     withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
     for b in bufY {
@@ -199,7 +199,7 @@ func encodeLayer(r: ImageReader, size: Int, scale: Int) async throws -> (Data, I
     return (out, sub)
 }
 
-func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
+func encodeBase(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> Data {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -213,7 +213,7 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
             group.addTask {
                 var rowResults: [(Data, Int, Int)] = []
                 for w in stride(from: 0, to: dx, by: size) {
-                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, scale: scale)
+                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, w, h))
                 }
                 return (h, rowResults)
@@ -239,7 +239,7 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
             group.addTask {
                 var rowResults: [(Data, Int, Int)] = []
                 for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, scale: scale)
+                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, w, h))
                 }
                 return (h, rowResults)
@@ -265,7 +265,7 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
             group.addTask {
                 var rowResults: [(Data, Int, Int)] = []
                 for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, scale: scale)
+                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, w, h))
                 }
                 return (h, rowResults)
@@ -288,7 +288,7 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
     var out = Data()
     withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt8(scale).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
     
     withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
     for b in bufY {
@@ -311,153 +311,149 @@ func encodeBase(r: ImageReader, size: Int, scale: Int) async throws -> Data {
     return out
 }
 
-private func measureBlockBits(block: inout Block2D, size: Int, scale: Int) -> Int {
+private func estimateRiceBitsDPCM(block: Block2D, size: Int) -> Int {
+    var sumDiffAbs = 0
+    var count = 0
+    var prev: Int16 = 0
+    
+    block.data.withUnsafeBufferPointer { ptr in
+        let len = size * size
+        count = len
+        for i in 0..<len {
+            let val = ptr[i]
+            let diff = abs(Int(val - prev))
+            sumDiffAbs += diff
+            prev = val
+        }
+    }
+    
+    if count == 0 { return 0 }
+    
+    let mean = Double(sumDiffAbs) / Double(count)
+    let k = (mean < 1.0) ? 0 : Int(log2(mean))
+    
+    let divisorShift = max(0, k - 1)
+    let bodyBits = sumDiffAbs >> divisorShift
+    let headerBits = count * (1 + k)
+    
+    return bodyBits + headerBits
+}
+
+private func fetchBlock(reader: ImageReader, plane: PlaneType, x: Int, y: Int, w: Int, h: Int) -> Block2D {
+    let block = Block2D(width: w, height: h)
+    for i in 0..<h {
+        let row: [Int16]
+        switch plane {
+        case .y:  row = reader.rowY(x: x, y: y + i, size: w)
+        case .cb: row = reader.rowCb(x: x, y: y + i, size: w)
+        case .cr: row = reader.rowCr(x: x, y: y + i, size: w)
+        }
+        block.setRow(offsetY: i, size: w, row: row)
+    }
+    return block
+}
+
+private enum PlaneType { case y, cb, cr }
+
+private func measureBlockBits(block: inout Block2D, size: Int, qt: QuantizationTable) -> Int {
     var sub = dwt2d(&block, size: size)
     
-    quantizeLow(&sub.ll, size: sub.size, scale: scale)
-    quantizeMid(&sub.hl, size: sub.size, scale: scale)
-    quantizeMid(&sub.lh, size: sub.size, scale: scale)
-    quantizeHigh(&sub.hh, size: sub.size, scale: scale)
+    quantizeLow(&sub.ll, qt: qt)
+    quantizeMid(&sub.hl, qt: qt)
+    quantizeMid(&sub.lh, qt: qt)
+    quantizeHigh(&sub.hh, qt: qt)
     
-    var totalBits = 0
-    
-    totalBits += estimateSumBitsDPCM(block: sub.ll, size: sub.size)
-    totalBits += estimateSumBits(block: sub.hl, size: sub.size)
-    totalBits += estimateSumBits(block: sub.lh, size: sub.size)
-    totalBits += estimateSumBits(block: sub.hh, size: sub.size)
-    
-    return totalBits
-}
-
-@inline(__always)
-private func estimateSumBits(block: Block2D, size: Int) -> Int {
     var bits = 0
-    block.data.withUnsafeBufferPointer { ptr in
-        for i in 0..<(size * size) {
-            let val = abs(Int(ptr[i]))
-            if val == 0 {
-                bits += 1 
-            } else {
-                // Rice (k=1) bit count approx:
-                // q = val / 2
-                // output = q '1's + 1 '0' + remaining 1 bit = q + 2 bits
-                // e.g.: 3 -> 1101 (4bit) vs estimate(1+2=3bit) ...
-                bits += (val >> 1) + 2
-            }
-        }
-    }
+    bits += estimateRiceBitsDPCM(block: sub.ll, size: sub.size)
+    bits += estimateRiceBits(block: sub.hl, size: sub.size)
+    bits += estimateRiceBits(block: sub.lh, size: sub.size)
+    bits += estimateRiceBits(block: sub.hh, size: sub.size)
+    
     return bits
 }
 
-@inline(__always)
-private func estimateSumBitsDPCM(block: Block2D, size: Int) -> Int {
-    var bits = 0
-    var prevVal: Int16 = 0
+private func estimateRiceBits(block: Block2D, size: Int) -> Int {
+    var sumAbs = 0
+    var count = 0
     
     block.data.withUnsafeBufferPointer { ptr in
-        for i in 0..<(size * size) {
-            let val = ptr[i]
-            let diff = abs(Int(val - prevVal))
-            
-            if diff == 0 {
-                bits += 1
-            } else {
-                bits += (diff >> 1) + 2
-            }
-            prevVal = val
+        let len = size * size
+        count = len
+        for i in 0..<len {
+            sumAbs += abs(Int(ptr[i]))
         }
     }
-    return bits
+    
+    if count == 0 { return 0 }
+    
+    let mean = Double(sumAbs) / Double(count)
+    let k = (mean < 1.0) ? 0 : Int(log2(mean))
+    
+    let divisorShift = max(0, k - 1)
+    let bodyBits = sumAbs >> divisorShift
+    let headerBits = count * (1 + k)
+    
+    return bodyBits + headerBits
 }
 
-private func estimateBaseScale(img: YCbCrImage, targetBitrate: Int) -> Int {
-    // 8 points
+func estimateQuantization(img: YCbCrImage, targetBits: Int) -> QuantizationTable {
+    let probeStep = 64
+    let qt = QuantizationTable(baseStep: probeStep)
+    
     let size = 8
     let w = (img.width / size)
     let h = (img.height / size)
+    
     let points: [(Int, Int)] = [
-        (0, 0),                                    // TL
-        ((img.width - w), 0),                      // TR
-        (0, (img.height - h)),                     // BL
-        ((img.width - w), (img.height - h)),       // BR
-        (((img.width - w) / 2), 0),                // TC
-        ((img.width - w), ((img.height - h) / 2)), // RC
-        (((img.width - w) / 2), (img.height - h)), // BC
-        (0, ((img.height - h) / 2)),               // LC
+        (0, 0),                                    // Top-Left
+        ((img.width - w), 0),                      // Top-Right
+        (0, (img.height - h)),                     // Bottom-Left
+        ((img.width - w), (img.height - h)),       // Bottom-Right
+        (((img.width - w) / 2), 0),                // Top-Center
+        ((img.width - w), ((img.height - h) / 2)), // Right-Center
+        (((img.width - w) / 2), (img.height - h)), // Bottom-Center
+        (0, ((img.height - h) / 2)),               // Left-Center
     ]
     
-    let baseScale = 1
-    var totalEstimatedBits = 0
-    let r = ImageReader(img: img)
+    var totalSampleBits = 0
+    let reader = ImageReader(img: img)
     
-    // Sampling loop
     for (sx, sy) in points {
         // Y Plane
-        var block = Block2D(width: w, height: h)
-        for i in 0..<h {
-            let row = r.rowY(x: sx, y: sy + i, size: w)
-            block.setRow(offsetY: i, size: w, row: row)
-        }
-        totalEstimatedBits += measureBlockBits(block: &block, size: size, scale: baseScale)
+        var blockY = fetchBlock(reader: reader, plane: .y, x: sx, y: sy, w: w, h: h)
+        totalSampleBits += measureBlockBits(block: &blockY, size: size, qt: qt)
         
         // Cb Plane
-        var blockCb = Block2D(width: w, height: h)
-        for i in 0..<h {
-            let row = r.rowCb(x: sx, y: sy + i, size: w)
-            blockCb.setRow(offsetY: i, size: w, row: row)
-        }
-        totalEstimatedBits += measureBlockBits(block: &blockCb, size: size, scale: baseScale)
+        var blockCb = fetchBlock(reader: reader, plane: .cb, x: sx, y: sy, w: w, h: h)
+        totalSampleBits += measureBlockBits(block: &blockCb, size: size, qt: qt)
         
         // Cr Plane
-        var blockCr = Block2D(width: w, height: h)
-        for i in 0..<h {
-            let row = r.rowCr(x: sx, y: sy + i, size: w)
-            blockCr.setRow(offsetY: i, size: w, row: row)
-        }
-        totalEstimatedBits += measureBlockBits(block: &blockCr, size: size, scale: baseScale)
+        var blockCr = fetchBlock(reader: reader, plane: .cr, x: sx, y: sy, w: w, h: h)
+        totalSampleBits += measureBlockBits(block: &blockCr, size: size, qt: qt)
     }
     
-    // Estimated total bits (for sampling)
-    let estimatedSampleBits = Double(totalEstimatedBits)
+    let samplePixels = points.count * (w * h) * 3 // Y+Cb+Cr
+    let totalPixels = img.width * img.height * 3
     
-    // Total pixel bits of original image (Y+Cb+Cr) * 8
-    let totalImageRawBits = Double((img.yPlane.count + img.cbPlane.count + img.crPlane.count) * 8)
+    let estimatedTotalBits = Double(totalSampleBits) * (Double(totalPixels) / Double(samplePixels))
+        
+    let ratio = estimatedTotalBits / Double(targetBits)
+    let predictedStep = Double(probeStep) * ratio
     
-    // Raw data size of sampled area (bits)
-    // points.count * (w * h) pixels * 3ch * 8bit
-    let sampleRawBits = Double(points.count * (w * h) * 3 * 8)
-    
-    // Compression ratio = Estimated compressed bits / Sample raw bits
-    let compressionRatio = estimatedSampleBits / sampleRawBits
-    
-    // Estimated bitrate when applied to the entire image
-    let estimatedCurrentBitrate = compressionRatio * totalImageRawBits
-    
-    let adjustmentRatio = estimatedCurrentBitrate / Double(targetBitrate)
-    
-    // Determine the new scale (simple proportional model)
-    var resultScale: Int
-    if 1.0 > adjustmentRatio {
-        // Bitrate exceeded -> Increase scale to improve compression ratio
-        resultScale = Int((Double(baseScale) * adjustmentRatio) + 0.5)
-    } else {
-        resultScale = Int((Double(baseScale) * adjustmentRatio) - 0.5)
-    }
-    
-    return max(1, resultScale)
+    return QuantizationTable(baseStep: Int(predictedStep))
 }
 
 public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
-    let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+    let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, scale: scale)
+    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, qt: qt)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, scale: scale)
+    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, qt: qt)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try await encodeBase(r: r0, size: 8, scale: scale)
+    let layer0 = try await encodeBase(r: r0, size: 8, qt: qt)
     
     var out = Data()
     
@@ -474,25 +470,25 @@ public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
 }
 
 public func encodeLayers(img: YCbCrImage, maxbitrate: Int) async throws -> (Data, Data, Data) {
-    let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+    let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, scale: scale)
+    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, qt: qt)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, scale: scale)
+    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, qt: qt)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try await encodeBase(r: r0, size: 8, scale: scale)
+    let layer0 = try await encodeBase(r: r0, size: 8, qt: qt)
     
     return (layer0, layer1, layer2)
 }
 
 public func encodeOne(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
-   let scale = estimateBaseScale(img: img, targetBitrate: maxbitrate)
+   let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r = ImageReader(img: img)
-    let layer = try await encodeBase(r: r, size: 32, scale: scale)
+    let layer = try await encodeBase(r: r, size: 32, qt: qt)
 
     var out = Data()
     

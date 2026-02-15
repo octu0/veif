@@ -42,10 +42,10 @@ The `One` mode is designed for scenarios where speed is the top priority. Unlike
 
 | Layer         | Resolution | Size | Image |
 | :---          | :---       | :--- | :--- |
-| Layer0        | 1/4        | 7.92KB | ![Layer0](docs/out_layer0.png) |
-| Layer1        | 1/2        | 19.56KB | ![Layer1](docs/out_layer1.png) |
-| Layer2        | 1          | 50.79KB | ![Layer2](docs/out_layer2.png) |
-| One(no layer) | 1          | 72.43KB | ![One](docs/out_one.png) |
+| Layer0        | 1/4        | 4.74KB | ![Layer0](docs/out_layer0.png) |
+| Layer1        | 1/2        | 11.81KB | ![Layer1](docs/out_layer1.png) |
+| Layer2        | 1          | 28.34KB | ![Layer2](docs/out_layer2.png) |
+| One(no layer) | 1          | 40.44KB | ![One](docs/out_one.png) |
 | original      | 1          | 213.68KB | ![original](docs/src.png) |
 
 # Usage
