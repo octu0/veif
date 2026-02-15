@@ -228,12 +228,9 @@ public struct ImageReader: Sendable {
             var cPx = rPx
             var cPy = rPy
             if img.ratio == .ratio420 {
-                // Downsample for chroma lookup if 4:2:0
                 cPx = (rPx / 2)
                 cPy = (rPy / 2)
             }
-            // If 4:4:4, we use full res coordinates (rPx, rPy) directly equivalent to cPx,cPy in 4:4:4 buffer
-            
             let offset = img.cOffset(cPx, cPy)
             plane[i] = Int16(img.cbPlane[offset])
         }

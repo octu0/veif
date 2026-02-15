@@ -13,14 +13,12 @@ public class Block2D: @unchecked Sendable {
         self.data = [Int16](repeating: 0, count: (width * height))
     }
 
-    /// data[y][x] 相当のアクセス
     @inline(__always)
     public subscript(y: Int, x: Int) -> Int16 {
         get { data[(y * width) + x] }
         set { data[(y * width) + x] = newValue }
     }
 
-    /// 行の開始インデックス
     @inline(__always)
     public func rowOffset(y: Int) -> Int {
         return (y * width)

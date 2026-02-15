@@ -288,7 +288,7 @@ public func calcMetrics(ref: YCbCrImage, target: YCbCrImage) -> BenchmarkMetrics
         psnrK: psnrCr,
         ssim: avgSSIM,
         msssim: avgMSSSIM,
-        y: ssimY, // Using ssimY for Y detail
+        y: ssimY,
         cb: ssimCb,
         cr: ssimCr
     )
@@ -300,7 +300,6 @@ public func resizeHalfNN(_ src: YCbCrImage) -> YCbCrImage {
     let dstW = (w / 2)
     let dstH = (h / 2)
     
-    // Default 4:2:0 for destination
     var dst = YCbCrImage(width: dstW, height: dstH)
     
     // Resize Y
@@ -322,40 +321,12 @@ public func resizeHalfNN(_ src: YCbCrImage) -> YCbCrImage {
             var sPx = (x * 2)
             var sPy = (y * 2)
             if src.ratio == .ratio444 {
-                // If 4:4:4, we are downsampling by 2 spatially.
-                // But dst chroma pixel 'x' corresponds to dst spatial '2x'.
-                // Corresponds to src spatial '4x'.
                 sPx = (x * 4)
                 sPy = (y * 4)
-            } else {
-                // If 4:2:0, we use (x*2), (y*2) which corresponds to src spatial (4x) in 4:2:0 plane space?
-                // Wait, if src 4:2:0.
-                // dst chroma x=0 -> src chroma 0. (spatial 0)
-                // dst chroma x=1 -> src chroma 2. (spatial 4)
-                // correct.
             }
-            // If src.ratio is 4:4:4, sPx is full-res coord.
-            // If src.ratio is 4:2:0, sPx is plane coord (so x*2 is correct).
-            
-            // Wait, if src is 4:4:4, sPx needs to point to correct pixel in 4:4:4 buffer.
-            // which is spatial 4x.
-            // So sPx = 4*x.
-            // src.cOffset(sPx, sPy).
-            
-            // If src is 4:2:0. sPx needs to point to correct pixel in 4:2:0 buffer.
-            // which is plane coord 2x.
-            // So sPx = 2*x.
-            // src.cOffset(sPx, sPy).
-            // But src.cOffset for 4:2:0 expects plane coord.
-            
-            // Wait, my cOffset logic in YCbCrImage:
-            // .ratio420: offset = y*cStride + x. (Direct plane access).
-            
-            // So for 4:2:0, passing plane coordinate 2x is correct.
-            // For 4:4:4, passing plane coordinate (which is spatial coordinate) 4x is correct.
             
             let sOff = src.cOffset(sPx, sPy)
-             if sOff < src.cbPlane.count {
+            if sOff < src.cbPlane.count {
                 dst.cbPlane[dOff] = src.cbPlane[sOff]
                 dst.crPlane[dOff] = src.crPlane[sOff]
             }

@@ -13,12 +13,11 @@ let package = Package(
         .target(
             name: "veif",
             dependencies: [],
-            swiftSettings:[.unsafeFlags(["-whole-module-optimization"])]
         ),
         .executableTarget(
             name: "example",
             dependencies: ["veif"],
-            swiftSettings:[.unsafeFlags(["-whole-module-optimization"])]
+            //swiftSettings:[.unsafeFlags(["-whole-module-optimization"])]
         ),
         .testTarget(
             name: "veifTests",
