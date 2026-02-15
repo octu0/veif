@@ -102,11 +102,18 @@ let decodedLayers = try await decodeLayers(data: e0, e1, e2)
     - Layer 0: Thumbnail (Base LL band)
     - Layer 1: Medium Quality (Adds HL, LH, HH of level 1)
     - Layer 2: High Quality (Adds HL, LH, HH of level 0)
-- **Quantization**: Content-Adaptive Bit-shift Quantization
-  - Flatness detection using HH subband analysis
+- **Quantization**: Sampling-based Rate Control
+  - Predicts optimal step size by probing 8 key regions (corners, center, edges) to meet target bitrate
+  - **Frequency Weighting**: Applies different quantization steps based on frequency bands (Low: 1x, Mid: 2x, High: 4x) to preserve visual quality
+  - **Signed Mapping**: Interleaves positive and negative values into unsigned integers (0, -1, 1, -2, 2...) for efficient variable-length coding
 - **Entropy Coding**: Zero-run Rice coding
   - RLE zero-run cap (maxVal=64) for stability
 - **Multi-Resolution**: 3-layer structure — Layer0 (1/4) → Layer1 (1/2) → Layer2 (1/1)
+- **SIMD Pipeline**:
+  - **DWT**: Vertical and horizontal lifting steps are fully vectorized using SIMD instructions (SIMD4/8/16) for LeGall 5/3 transform.
+  - **Quantization**: Block-based quantization and dequantization use AVX/NEON for parallel processing.
+- **Memory Management**:
+  - Unsafe buffer pointers are used throughout the pipeline (ImageReader, DWT, Quantization) to minimize ARC overhead and bounds checking.
 
 ## CLI Usage
 

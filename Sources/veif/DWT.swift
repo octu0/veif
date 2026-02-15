@@ -1,5 +1,4 @@
 import Foundation
-import Accelerate
 
 // MARK: - DWT Structures
 
