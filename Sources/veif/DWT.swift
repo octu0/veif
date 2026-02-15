@@ -576,14 +576,13 @@ internal func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
 
 @inline(__always)
 public func invDwt2d(_ sub: Subbands) -> Block2D {
-    let size = (sub.size * 2)
     #if arch(arm64) || arch(x86_64) || arch(wasm32)
-    switch size {
-    case 8:
+    switch sub.size {
+    case 4:
         return invDwt2dSIMD4(sub)
-    case 16:
+    case 8:
         return invDwt2dSIMD8(sub)
-    case 32:
+    case 16:
         return invDwt2dSIMD16(sub)
     default:
         return invDwt2dScalar(sub)

@@ -24,6 +24,7 @@ public class Block2D: @unchecked Sendable {
         return (y * width)
     }
 
+    @inline(__always)
     public func setRow(offsetY: Int, size: Int, row: [Int16]) {
         let offset = self.rowOffset(y: offsetY)
         row.withUnsafeBufferPointer { ptr in
@@ -35,6 +36,7 @@ public class Block2D: @unchecked Sendable {
         }
     }
 
+    @inline(__always)
     public func withUnsafeBufferPointer<R>(atRow y: Int, body: (UnsafeBufferPointer<Int16>) throws -> R) rethrows -> R {
         let offset = self.rowOffset(y: y)
         return try self.data.withUnsafeBufferPointer { ptr in

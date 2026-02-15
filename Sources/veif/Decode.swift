@@ -2,6 +2,14 @@ import Foundation
 
 // MARK: - Decode Logic
 
+@inline(__always)
+func toInt16(_ u: UInt16) -> Int16 {
+    let s = Int16(bitPattern: (u >> 1))
+    let m = (-1 * Int16(bitPattern: (u & 1)))
+    return (s ^ m)
+}
+
+@inline(__always)
 func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
     let block = Block2D(width: size, height: size)
     try block.data.withUnsafeMutableBufferPointer { buf in
@@ -15,6 +23,7 @@ func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
     return block
 }
 
+@inline(__always)
 func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
     let block = Block2D(width: size, height: size)
     var prevVal: Int16 = 0

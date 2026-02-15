@@ -4,22 +4,25 @@ import Foundation
 
 let k: UInt8 = 1
 
-func toUint16Encode(_ n: Int16) -> UInt16 {
+@inline(__always)
+func toUint16(_ n: Int16) -> UInt16 {
     return UInt16(bitPattern: ((n &<< 1) ^ (n >> 15)))
 }
 
+@inline(__always)
 func blockEncode(rw: RiceWriter, block: Block2D, size: Int) {
     for i in 0..<(size * size) {
         rw.write(val: UInt16(bitPattern: block.data[i]), k: k)
     }
 }
 
+@inline(__always)
 func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
     var prevVal: Int16 = 0
     for i in 0..<(size * size) {
         let val = block.data[i]
         let diff = val - prevVal
-        rw.write(val: toUint16Encode(diff), k: k)
+        rw.write(val: toUint16(diff), k: k)
         prevVal = val
     }
 }

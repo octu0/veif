@@ -1,19 +1,5 @@
 import Foundation
 
-// MARK: - Helper
-
-@inlinable @inline(__always)
-public func toUint16(_ n: Int16) -> UInt16 {
-    return UInt16(bitPattern: ((n &<< 1) ^ (n >> 15)))
-}
-
-@inlinable @inline(__always)
-public func toInt16(_ u: UInt16) -> Int16 {
-    let s = Int16(bitPattern: (u >> 1))
-    let m = (-1 * Int16(bitPattern: (u & 1)))
-    return (s ^ m)
-}
-
 // MARK: - BitWriter
 
 public class BitWriter {

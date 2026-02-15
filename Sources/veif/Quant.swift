@@ -28,6 +28,7 @@ struct QuantizationTable: Sendable {
     }
 }
 
+typealias QuantizeFunc = (_ block: inout Block2D, _ qt: QuantizationTable) -> Void
 
 @inline(__always)
 func quantizeLow(_ block: inout Block2D, qt: QuantizationTable) {
@@ -108,6 +109,7 @@ private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32)
     return res.replacing(with: 0 &- res, where: isNeg)
 }
 
+@inline(__always)
 private func quantizeSIMD(_ block: inout Block2D, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
@@ -137,6 +139,7 @@ private func quantizeSIMD(_ block: inout Block2D, q: Quantizer) {
     }
 }
 
+@inline(__always)
 private func quantizeSIMDSignedMapping(_ block: inout Block2D, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
@@ -266,6 +269,7 @@ private func performDequantizeSIMD8(_ vec: SIMD8<Int16>, step: Int32) -> SIMD8<I
     )
 }
 
+@inline(__always)
 private func dequantizeSIMD(_ block: inout Block2D, q: Quantizer) {
     let step = Int32(q.step)
     let count = block.data.count
@@ -294,6 +298,7 @@ private func dequantizeSIMD(_ block: inout Block2D, q: Quantizer) {
     }
 }
 
+@inline(__always)
 private func dequantizeSIMDSignedMapping(_ block: inout Block2D, q: Quantizer) {
     let step = Int32(q.step)
     let count = block.data.count
