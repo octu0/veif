@@ -1,10 +1,5 @@
 # veif
 
-
-> [!IMPORTANT]
-> Work In Progress
-
-
 **veif** is a high-performance, multi-resolution image format.
 
 The core philosophy of **veif** is speed and efficiency—not just in compression, but in distribution.
