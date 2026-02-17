@@ -8,6 +8,10 @@ let package = Package(
     ],
     products: [
         .library(name: "veif", targets: ["veif"]),
+        .executable(name: "wasm", targets: ["wasm"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/swiftwasm/JavaScriptKit", from: "0.45.0")
     ],
     targets: [
         .target(
@@ -18,6 +22,14 @@ let package = Package(
             name: "example",
             dependencies: ["veif"],
             //swiftSettings:[.unsafeFlags(["-whole-module-optimization"])]
+        ),
+        .executableTarget(
+            name: "wasm",
+            dependencies: [
+                "veif",
+                .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+                .product(name: "JavaScriptEventLoop", package: "JavaScriptKit")
+            ]
         ),
         .testTarget(
             name: "veifTests",
