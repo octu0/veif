@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Block2D
 
-public class Block2D: @unchecked Sendable {
+public struct Block2D: Sendable {
     public var data: [Int16]
     public let width: Int
     public let height: Int
@@ -25,7 +25,7 @@ public class Block2D: @unchecked Sendable {
     }
 
     @inline(__always)
-    public func setRow(offsetY: Int, size: Int, row: [Int16]) {
+    public mutating func setRow(offsetY: Int, size: Int, row: [Int16]) {
         let offset = self.rowOffset(y: offsetY)
         row.withUnsafeBufferPointer { ptr in
             self.data.withUnsafeMutableBufferPointer { dest in

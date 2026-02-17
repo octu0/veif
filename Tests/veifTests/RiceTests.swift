@@ -18,7 +18,7 @@ struct RiceTests {
     @Test("BitWriter / BitReader Roundtrip")
     func bitWriterReaderRoundtrip() throws {
         let data = NSMutableData()
-        let bw = BitWriter(data: data)
+        var bw = BitWriter(data: data)
         
         bw.writeBit(1)
         bw.writeBit(0)
@@ -26,7 +26,7 @@ struct RiceTests {
         bw.writeBit(1)
         bw.flush()
         
-        let br = BitReader(data: data as Data)
+        var br = BitReader(data: data as Data)
         #expect(try br.readBit() == 1)
         #expect(try br.readBit() == 0)
         #expect(try br.readBits(n: 3) == 0x05)
@@ -37,7 +37,7 @@ struct RiceTests {
     func riceNoZeros() throws {
         let data = NSMutableData()
         let bw = BitWriter(data: data)
-        let rw = RiceWriter(bw: bw)
+        var rw = RiceWriter(bw: bw)
         
         let values: [UInt16] = [1, 2, 3, 10, 20, 100]
         let k: UInt8 = 2
@@ -48,7 +48,7 @@ struct RiceTests {
         rw.flush()
         
         let br = BitReader(data: data as Data)
-        let rr = RiceReader(br: br)
+        var rr = RiceReader(br: br)
         
         for v in values {
             let decoded = try rr.read(k: k)
@@ -60,7 +60,7 @@ struct RiceTests {
     func riceWithZeroRuns() throws {
         let data = NSMutableData()
         let bw = BitWriter(data: data)
-        let rw = RiceWriter(bw: bw)
+        var rw = RiceWriter(bw: bw)
         
         // 0 が連続するパターン
         // [1, 0, 0, 0, 2, 0 (64 times), 3]
@@ -77,7 +77,7 @@ struct RiceTests {
         rw.flush()
         
         let br = BitReader(data: data as Data)
-        let rr = RiceReader(br: br)
+        var rr = RiceReader(br: br)
         
         for (i, v) in input.enumerated() {
             let decoded = try rr.read(k: k)
@@ -89,7 +89,7 @@ struct RiceTests {
     func riceLongZeroRun() throws {
         let data = NSMutableData()
         let bw = BitWriter(data: data)
-        let rw = RiceWriter(bw: bw)
+        var rw = RiceWriter(bw: bw)
         
         // maxVal(64) を超える 0 の連続
         let zeroCount = 150
@@ -103,7 +103,7 @@ struct RiceTests {
         rw.flush()
         
         let br = BitReader(data: data as Data)
-        let rr = RiceReader(br: br)
+        var rr = RiceReader(br: br)
         
         for (i, v) in input.enumerated() {
             let decoded = try rr.read(k: k)

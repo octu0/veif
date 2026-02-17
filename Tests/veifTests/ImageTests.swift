@@ -5,7 +5,7 @@ final class ImageTests: XCTestCase {
     
     func testUpdateY() {
         var image = Image16(width: 8, height: 8)
-        let block = Block2D(width: 4, height: 4)
+        var block = Block2D(width: 4, height: 4)
         for h in 0..<4 {
             for w in 0..<4 {
                 block[h, w] = Int16(h * 4 + w + 1)
@@ -43,7 +43,7 @@ final class ImageTests: XCTestCase {
     func testUpdateCb() {
         var image = Image16(width: 8, height: 8)
         // Cb size is 4x4
-        let block = Block2D(width: 2, height: 2)
+        var block = Block2D(width: 2, height: 2)
         block[0, 0] = 10
         block[0, 1] = 20
         block[1, 0] = 30
@@ -79,7 +79,7 @@ final class ImageTests: XCTestCase {
 
     func testUpdateCr() {
         var image = Image16(width: 8, height: 8)
-        let block = Block2D(width: 2, height: 2)
+        var block = Block2D(width: 2, height: 2)
         block[0, 0] = 99
         
         image.updateCr(data: block, startX: 0, startY: 0, size: 2)

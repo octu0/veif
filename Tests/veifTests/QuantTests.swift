@@ -51,7 +51,7 @@ private func referenceDequantizeSignedMapping(_ data: inout Block2D, size: Int, 
 }
 
 private func makeTestBlock(size: Int, seed: Int16) -> Block2D {
-    let block = Block2D(width: size, height: size)
+    var block = Block2D(width: size, height: size)
     for y in 0..<size {
         for x in 0..<size {
             let val = Int16(((y * size) + x)) &- seed

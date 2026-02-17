@@ -10,8 +10,8 @@ func toInt16(_ u: UInt16) -> Int16 {
 }
 
 @inline(__always)
-func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
-    let block = Block2D(width: size, height: size)
+func blockDecode(rr: inout RiceReader, size: Int) throws -> Block2D {
+    var block = Block2D(width: size, height: size)
     try block.data.withUnsafeMutableBufferPointer { buf in
         guard var p = buf.baseAddress else { return }
         for _ in 0..<(size * size) {
@@ -24,8 +24,8 @@ func blockDecode(rr: RiceReader, size: Int) throws -> Block2D {
 }
 
 @inline(__always)
-func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
-    let block = Block2D(width: size, height: size)
+func blockDecodeDPCM(rr: inout RiceReader, size: Int) throws -> Block2D {
+    var block = Block2D(width: size, height: size)
     var prevVal: Int16 = 0
 
     try block.data.withUnsafeMutableBufferPointer { buf in
@@ -44,12 +44,13 @@ func blockDecodeDPCM(rr: RiceReader, size: Int) throws -> Block2D {
     return block
 }
 
+@inline(__always)
 func invertLayer(br: BitReader, ll: Block2D, size: Int, qt: QuantizationTable) throws -> Block2D {
-    let rr = RiceReader(br: br)
+    var rr = RiceReader(br: br)
     
-    var hl = try blockDecode(rr: rr, size: (size / 2))
-    var lh = try blockDecode(rr: rr, size: (size / 2))
-    var hh = try blockDecode(rr: rr, size: (size / 2))
+    var hl = try blockDecode(rr: &rr, size: (size / 2))
+    var lh = try blockDecode(rr: &rr, size: (size / 2))
+    var hh = try blockDecode(rr: &rr, size: (size / 2))
     
     dequantizeMidSignedMapping(&hl, qt: qt)
     dequantizeMidSignedMapping(&lh, qt: qt)
@@ -59,13 +60,14 @@ func invertLayer(br: BitReader, ll: Block2D, size: Int, qt: QuantizationTable) t
     return invDwt2d(sub)
 }
 
+@inline(__always)
 func invertBase(br: BitReader, size: Int, qt: QuantizationTable) throws -> Block2D {
-    let rr = RiceReader(br: br)
+    var rr = RiceReader(br: br)
     
-    var ll = try blockDecodeDPCM(rr: rr, size: (size / 2))
-    var hl = try blockDecode(rr: rr, size: (size / 2))
-    var lh = try blockDecode(rr: rr, size: (size / 2))
-    var hh = try blockDecode(rr: rr, size: (size / 2))
+    var ll = try blockDecodeDPCM(rr: &rr, size: (size / 2))
+    var hl = try blockDecode(rr: &rr, size: (size / 2))
+    var lh = try blockDecode(rr: &rr, size: (size / 2))
+    var hh = try blockDecode(rr: &rr, size: (size / 2))
     
     dequantizeLow(&ll, qt: qt)
     dequantizeMidSignedMapping(&hl, qt: qt)
@@ -78,12 +80,14 @@ func invertBase(br: BitReader, size: Int, qt: QuantizationTable) throws -> Block
 
 public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int) -> Block2D
 
+@inline(__always)
 func invertLayerFunc(br: BitReader, w: Int, h: Int, size: Int, qt: QuantizationTable, getLL: GetLLFunc) throws -> Block2D {
     let ll = getLL(w/2, h/2, size/2)
     let planes = try invertLayer(br: br, ll: ll, size: size, qt: qt)
     return planes
 }
 
+@inline(__always)
 func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> Block2D {
     let planes = try invertBase(br: br, size: size, qt: qt)
     return planes
@@ -92,6 +96,7 @@ func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, qt: QuantizationTa
 func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
     var offset = 0
     
+    @inline(__always)
     func readUInt8() throws -> UInt8 {
         guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
         let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
@@ -99,6 +104,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
         return val
     }
     
+    @inline(__always)
     func readUInt16() throws -> UInt16 {
         guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
         let val = r.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
@@ -106,6 +112,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
         return val
     }
     
+    @inline(__always)
     func readBlock() throws -> Data {
         let len = try readUInt16()
         guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
@@ -243,6 +250,7 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
 func decodeBase(r: Data, size: Int) async throws -> Image16 {
     var offset = 0
     
+    @inline(__always)
     func readUInt8() throws -> UInt8 {
         guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
         let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
@@ -250,6 +258,7 @@ func decodeBase(r: Data, size: Int) async throws -> Image16 {
         return val
     }
     
+    @inline(__always)
     func readUInt16() throws -> UInt16 {
         guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
         let val = r.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
@@ -257,6 +266,7 @@ func decodeBase(r: Data, size: Int) async throws -> Image16 {
         return val
     }
     
+    @inline(__always)
     func readBlock() throws -> Data {
         let len = try readUInt16()
         guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }

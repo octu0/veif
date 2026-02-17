@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Utilities
 
-@inlinable @inline(__always)
+@inline(__always)
 func boundaryRepeat(_ width: Int, _ height: Int, _ px: Int, _ py: Int) -> (Int, Int) {
     var x = px
     var y = py
@@ -40,7 +40,7 @@ func boundaryRepeat(_ width: Int, _ height: Int, _ px: Int, _ py: Int) -> (Int, 
     return (x, y)
 }
 
-@inlinable @inline(__always)
+@inline(__always)
 func clampU8(_ v: Int16) -> UInt8 {
     if v < 0 {
         return 0
@@ -67,11 +67,11 @@ public struct YCbCrImage: Sendable {
     public let ratio: YCbCrRatio
     
     public var yStride: Int {
-        @inlinable @inline(__always) get { width }
+        @inline(__always) get { width }
     }
 
     public var cStride: Int {
-        @inlinable @inline(__always) get {
+        @inline(__always) get {
             switch ratio {
             case .ratio420: return (width + 1) / 2
             case .ratio444: return width
@@ -99,12 +99,12 @@ public struct YCbCrImage: Sendable {
         }
     }
     
-    @inlinable @inline(__always)
+    @inline(__always)
     public func yOffset(_ x: Int, _ y: Int) -> Int {
         return ((y * yStride) + x)
     }
     
-    @inlinable @inline(__always)
+    @inline(__always)
     public func cOffset(_ x: Int, _ y: Int) -> Int {
         return ((y * cStride) + x)
     }
@@ -209,6 +209,7 @@ public struct ImageReader: Sendable {
         self.height = img.height
     }
     
+    @inline(__always)
     public func rowY(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         
@@ -240,6 +241,7 @@ public struct ImageReader: Sendable {
         return plane
     }
 
+    @inline(__always)
     public func rowCb444(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
@@ -253,6 +255,7 @@ public struct ImageReader: Sendable {
         return plane
     }
 
+    @inline(__always)
     private func rowCb420(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         img.cbPlane.withUnsafeBufferPointer { srcPtr in
@@ -273,6 +276,7 @@ public struct ImageReader: Sendable {
         return plane
     }
 
+    @inline(__always)
     public func rowCb(x: Int, y: Int, size: Int) -> [Int16] {
         if img.ratio == .ratio444 {
             return rowCb444(x: x, y: y, size: size)
@@ -280,7 +284,7 @@ public struct ImageReader: Sendable {
         return rowCb420(x: x, y: y, size: size)
     }
 
-
+    @inline(__always)
     public func rowCr444(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         for i in 0..<size {
@@ -294,6 +298,7 @@ public struct ImageReader: Sendable {
         return plane
     }
 
+    @inline(__always)
     public func rowCr420(x: Int, y: Int, size: Int) -> [Int16] {
         var plane = [Int16](repeating: 0, count: size)
         img.crPlane.withUnsafeBufferPointer { srcPtr in
@@ -314,6 +319,7 @@ public struct ImageReader: Sendable {
         return plane
     }
 
+    @inline(__always)
     public func rowCr(x: Int, y: Int, size: Int) -> [Int16] {
         if img.ratio == .ratio444 {
             return rowCr444(x: x, y: y, size: size)
@@ -337,8 +343,9 @@ public struct Image16: Sendable {
         self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
     }
     
+    @inline(__always)
     public func getY(x: Int, y: Int, size: Int) -> Block2D {
-        let block = Block2D(width: size, height: size)
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
@@ -348,8 +355,9 @@ public struct Image16: Sendable {
         return block
     }
     
+    @inline(__always)
     public func getCb(x: Int, y: Int, size: Int) -> Block2D {
-        let block = Block2D(width: size, height: size)
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
@@ -359,8 +367,9 @@ public struct Image16: Sendable {
         return block
     }
     
+    @inline(__always)
     public func getCr(x: Int, y: Int, size: Int) -> Block2D {
-        let block = Block2D(width: size, height: size)
+        var block = Block2D(width: size, height: size)
         for h in 0..<size {
             for w in 0..<size {
                 let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
@@ -370,6 +379,7 @@ public struct Image16: Sendable {
         return block
     }
     
+    @inline(__always)
     public mutating func updateY(data: Block2D, startX: Int, startY: Int, size: Int) {
         let validStartY = max(0, startY)
         let validStartX = max(0, startX)
@@ -398,6 +408,7 @@ public struct Image16: Sendable {
         }
     }
     
+    @inline(__always)
     public mutating func updateCb(data: Block2D, startX: Int, startY: Int, size: Int) {
         let halfHeight = (height / 2)
         let halfWidth = (width / 2)
@@ -429,6 +440,7 @@ public struct Image16: Sendable {
         }
     }
     
+    @inline(__always)
     public mutating func updateCr(data: Block2D, startX: Int, startY: Int, size: Int) {
         let halfHeight = (height / 2)
         let halfWidth = (width / 2)
@@ -460,6 +472,7 @@ public struct Image16: Sendable {
         }
     }
     
+    @inline(__always)
     public func toYCbCr() -> YCbCrImage {
         var img = YCbCrImage(width: width, height: height)
         

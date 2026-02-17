@@ -10,14 +10,14 @@ func toUint16(_ n: Int16) -> UInt16 {
 }
 
 @inline(__always)
-func blockEncode(rw: RiceWriter, block: Block2D, size: Int) {
+func blockEncode(rw: inout RiceWriter, block: Block2D, size: Int) {
     for i in 0..<(size * size) {
         rw.write(val: UInt16(bitPattern: block.data[i]), k: k)
     }
 }
 
 @inline(__always)
-func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
+func blockEncodeDPCM(rw: inout RiceWriter, block: Block2D, size: Int) {
     var prevVal: Int16 = 0
     for i in 0..<(size * size) {
         let val = block.data[i]
@@ -27,6 +27,7 @@ func blockEncodeDPCM(rw: RiceWriter, block: Block2D, size: Int) {
     }
 }
 
+@inline(__always)
 func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws -> Block2D {
     var sub = dwt2d(&block, size: size)
     
@@ -34,15 +35,16 @@ func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, qt: Qu
     quantizeMidSignedMapping(&sub.lh, qt: qt)
     quantizeHighSignedMapping(&sub.hh, qt: qt)
     
-    let rw = RiceWriter(bw: BitWriter(data: data))
-    blockEncode(rw: rw, block: sub.hl, size: sub.size)
-    blockEncode(rw: rw, block: sub.lh, size: sub.size)
-    blockEncode(rw: rw, block: sub.hh, size: sub.size)
+    var rw = RiceWriter(bw: BitWriter(data: data))
+    blockEncode(rw: &rw, block: sub.hl, size: sub.size)
+    blockEncode(rw: &rw, block: sub.lh, size: sub.size)
+    blockEncode(rw: &rw, block: sub.hh, size: sub.size)
     rw.flush()
     
     return sub.ll
 }
 
+@inline(__always)
 func transformBase(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws {
     var sub = dwt2d(&block, size: size)
     
@@ -51,14 +53,15 @@ func transformBase(data: NSMutableData, block: inout Block2D, size: Int, qt: Qua
     quantizeMidSignedMapping(&sub.lh, qt: qt)
     quantizeHighSignedMapping(&sub.hh, qt: qt)
     
-    let rw = RiceWriter(bw: BitWriter(data: data))
-    blockEncodeDPCM(rw: rw, block: sub.ll, size: sub.size)
-    blockEncode(rw: rw, block: sub.hl, size: sub.size)
-    blockEncode(rw: rw, block: sub.lh, size: sub.size)
-    blockEncode(rw: rw, block: sub.hh, size: sub.size)
+    var rw = RiceWriter(bw: BitWriter(data: data))
+    blockEncodeDPCM(rw: &rw, block: sub.ll, size: sub.size)
+    blockEncode(rw: &rw, block: sub.hl, size: sub.size)
+    blockEncode(rw: &rw, block: sub.lh, size: sub.size)
+    blockEncode(rw: &rw, block: sub.hh, size: sub.size)
     rw.flush()
 }
 
+@inline(__always)
 func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> (Data, Block2D) {
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
@@ -72,6 +75,7 @@ func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: Quantizati
     return (data as Data, ll)
 }
 
+@inline(__always)
 func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> Data {
     var block = Block2D(width: size, height: size)
     for i in 0..<size {
@@ -343,7 +347,7 @@ private func estimateRiceBitsDPCM(block: Block2D, size: Int) -> Int {
 }
 
 private func fetchBlock(reader: ImageReader, plane: PlaneType, x: Int, y: Int, w: Int, h: Int) -> Block2D {
-    let block = Block2D(width: w, height: h)
+    var block = Block2D(width: w, height: h)
     for i in 0..<h {
         let row: [Int16]
         switch plane {

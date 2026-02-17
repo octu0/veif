@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - BitWriter
 
-public class BitWriter {
+public struct BitWriter {
     public let data: NSMutableData
     private var cache: UInt8
     private var bits: UInt8
@@ -17,7 +17,8 @@ public class BitWriter {
         self.buffer.reserveCapacity(bufferSize)
     }
     
-    public func writeBit(_ bit: UInt8) {
+    @inline(__always)
+    public mutating func writeBit(_ bit: UInt8) {
         if 0 < bit {
             cache |= (1 << (7 - bits))
         }
@@ -35,14 +36,16 @@ public class BitWriter {
         }
     }
     
-    public func writeBits(val: UInt16, n: UInt8) {
+    @inline(__always)
+    public mutating func writeBits(val: UInt16, n: UInt8) {
         for i in 0..<n {
             let bit = ((val >> (n - 1 - i)) & 1)
             writeBit(UInt8(bit))
         }
     }
     
-    public func flush() {
+    @inline(__always)
+    public mutating func flush() {
         if 0 < bits {
             buffer.append(cache)
             bits = 0
@@ -59,8 +62,8 @@ public class BitWriter {
 
 // MARK: - RiceWriter
 
-public class RiceWriter {
-    private let bw: BitWriter
+public struct RiceWriter {
+    private var bw: BitWriter
     private let maxVal: UInt16
     private var zeroCount: UInt16
     private var lastK: UInt8
@@ -72,7 +75,8 @@ public class RiceWriter {
         self.lastK = 0
     }
     
-    internal func writePrimitive(val: UInt16, k: UInt8) {
+    @inline(__always)
+    internal mutating func writePrimitive(val: UInt16, k: UInt8) {
         let m = (UInt16(1) << k)
         let q = (val / m)
         let r = (val % m)
@@ -85,7 +89,8 @@ public class RiceWriter {
         bw.writeBits(val: r, n: k)
     }
     
-    public func write(val: UInt16, k: UInt8) {
+    @inline(__always)
+    public mutating func write(val: UInt16, k: UInt8) {
         lastK = k
         
         if val == 0 {
@@ -103,7 +108,8 @@ public class RiceWriter {
         writePrimitive(val: val, k: k)
     }
     
-    internal func flushZeros(k: UInt8) {
+    @inline(__always)
+    internal mutating func flushZeros(k: UInt8) {
         if zeroCount == 0 {
             return
         }
@@ -113,7 +119,8 @@ public class RiceWriter {
         zeroCount = 0
     }
     
-    public func flush() {
+    @inline(__always)
+    public mutating func flush() {
         if 0 < zeroCount {
             flushZeros(k: lastK)
         }
@@ -123,7 +130,7 @@ public class RiceWriter {
 
 // MARK: - BitReader
 
-public class BitReader {
+public struct BitReader {
     private let data: Data
     private var offset: Int
     private var cache: UInt8
@@ -139,7 +146,7 @@ public class BitReader {
     }
     
     @inline(__always)
-    public func readBit() throws -> UInt8 {
+    public mutating func readBit() throws -> UInt8 {
         if bits == 0 {
             if dataCount <= offset {
                 throw NSError(domain: "BitReaderErr", code: 1, userInfo: [NSLocalizedDescriptionKey: "EOF"])
@@ -154,7 +161,7 @@ public class BitReader {
     }
     
     @inline(__always)
-    public func readBits(n: UInt8) throws -> UInt16 {
+    public mutating func readBits(n: UInt8) throws -> UInt16 {
         var val: UInt16 = 0
         for _ in 0..<n {
             let bit = try readBit()
@@ -166,8 +173,8 @@ public class BitReader {
 
 // MARK: - RiceReader
 
-public class RiceReader {
-    private let br: BitReader
+public struct RiceReader {
+    private var br: BitReader
     private var pendingZeros: Int
     
     public init(br: BitReader) {
@@ -175,7 +182,8 @@ public class RiceReader {
         self.pendingZeros = 0
     }
     
-    internal func readPrimitive(k: UInt8) throws -> UInt16 {
+    @inline(__always)
+    internal mutating func readPrimitive(k: UInt8) throws -> UInt16 {
         var q: UInt16 = 0
         while true {
             let bit = try br.readBit()
@@ -190,7 +198,8 @@ public class RiceReader {
         return val
     }
     
-    public func read(k: UInt8) throws -> UInt16 {
+    @inline(__always)
+    public mutating func read(k: UInt8) throws -> UInt16 {
         if 0 < pendingZeros {
             pendingZeros -= 1
             return 0
