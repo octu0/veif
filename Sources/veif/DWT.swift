@@ -146,10 +146,13 @@ internal func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count
 func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     var low = SIMD4<Int16>(buffer[0 * stride], buffer[2 * stride], buffer[4 * stride], buffer[6 * stride])
     var high = SIMD4<Int16>(buffer[1 * stride], buffer[3 * stride], buffer[5 * stride], buffer[7 * stride])
+
     let lowShifted = SIMD4<Int16>(low[1], low[2], low[3], low[3])
     high &-= (low &+ lowShifted) &>> 1
+
     let highShifted = SIMD4<Int16>(high[0], high[0], high[1], high[2])
     low &+= (highShifted &+ high &+ 2) &>> 2
+
     buffer[0 * stride] = low[0]; buffer[1 * stride] = low[1]; buffer[2 * stride] = low[2]; buffer[3 * stride] = low[3]
     buffer[4 * stride] = high[0]; buffer[5 * stride] = high[1]; buffer[6 * stride] = high[2]; buffer[7 * stride] = high[3]
 }
@@ -164,10 +167,13 @@ func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[1 * stride], buffer[3 * stride], buffer[5 * stride], buffer[7 * stride],
         buffer[9 * stride], buffer[11 * stride], buffer[13 * stride], buffer[15 * stride]
     )
+
     let lowShifted = SIMD8<Int16>(low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[7])
     high &-= (low &+ lowShifted) &>> 1
+
     let highShifted = SIMD8<Int16>(high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6])
     low &+= (highShifted &+ high &+ 2) &>> 2
+
     buffer[0 * stride] = low[0]; buffer[1 * stride] = low[1]; buffer[2 * stride] = low[2]; buffer[3 * stride] = low[3]
     buffer[4 * stride] = low[4]; buffer[5 * stride] = low[5]; buffer[6 * stride] = low[6]; buffer[7 * stride] = low[7]
     buffer[8 * stride] = high[0]; buffer[9 * stride] = high[1]; buffer[10 * stride] = high[2]; buffer[11 * stride] = high[3]
@@ -188,30 +194,40 @@ func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[17 * stride], buffer[19 * stride], buffer[21 * stride], buffer[23 * stride],
         buffer[25 * stride], buffer[27 * stride], buffer[29 * stride], buffer[31 * stride]
     )
+
     let lowShifted = SIMD16<Int16>(
         low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8],
         low[9], low[10], low[11], low[12], low[13], low[14], low[15], low[15]
     )
     high &-= (low &+ lowShifted) &>> 1
+
     let highShifted = SIMD16<Int16>(
         high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6],
         high[7], high[8], high[9], high[10], high[11], high[12], high[13], high[14]
     )
     low &+= (highShifted &+ high &+ 2) &>> 2
-    for i in 0..<16 {
-        buffer[(0 + i) * stride] = low[i]
-        buffer[(16 + i) * stride] = high[i]
-    }
+
+    buffer[0 * stride] = low[0]; buffer[1 * stride] = low[1]; buffer[2 * stride] = low[2]; buffer[3 * stride] = low[3]
+    buffer[4 * stride] = low[4]; buffer[5 * stride] = low[5]; buffer[6 * stride] = low[6]; buffer[7 * stride] = low[7]
+    buffer[8 * stride] = low[8]; buffer[9 * stride] = low[9]; buffer[10 * stride] = low[10]; buffer[11 * stride] = low[11]
+    buffer[12 * stride] = low[12]; buffer[13 * stride] = low[13]; buffer[14 * stride] = low[14]; buffer[15 * stride] = low[15]
+    buffer[16 * stride] = high[0]; buffer[17 * stride] = high[1]; buffer[18 * stride] = high[2]; buffer[19 * stride] = high[3]
+    buffer[20 * stride] = high[4]; buffer[21 * stride] = high[5]; buffer[22 * stride] = high[6]; buffer[23 * stride] = high[7]
+    buffer[24 * stride] = high[8]; buffer[25 * stride] = high[9]; buffer[26 * stride] = high[10]; buffer[27 * stride] = high[11]
+    buffer[28 * stride] = high[12]; buffer[29 * stride] = high[13]; buffer[30 * stride] = high[14]; buffer[31 * stride] = high[15]
 }
 
 @inline(__always)
 func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
     var low = SIMD4<Int16>(buffer[0 * stride], buffer[1 * stride], buffer[2 * stride], buffer[3 * stride])
     var high = SIMD4<Int16>(buffer[4 * stride], buffer[5 * stride], buffer[6 * stride], buffer[7 * stride])
+
     let highShifted = SIMD4<Int16>(high[0], high[0], high[1], high[2])
     low &-= (highShifted &+ high &+ 2) &>> 2
+
     let lowShifted = SIMD4<Int16>(low[1], low[2], low[3], low[3])
     high &+= (low &+ lowShifted) &>> 1
+
     buffer[0 * stride] = low[0]; buffer[1 * stride] = high[0]
     buffer[2 * stride] = low[1]; buffer[3 * stride] = high[1]
     buffer[4 * stride] = low[2]; buffer[5 * stride] = high[2]
@@ -228,10 +244,13 @@ func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[8 * stride], buffer[9 * stride], buffer[10 * stride], buffer[11 * stride],
         buffer[12 * stride], buffer[13 * stride], buffer[14 * stride], buffer[15 * stride]
     )
+
     let highShifted = SIMD8<Int16>(high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6])
     low &-= (highShifted &+ high &+ 2) &>> 2
+
     let lowShifted = SIMD8<Int16>(low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[7])
     high &+= (low &+ lowShifted) &>> 1
+
     buffer[0 * stride] = low[0]; buffer[1 * stride] = high[0]
     buffer[2 * stride] = low[1]; buffer[3 * stride] = high[1]
     buffer[4 * stride] = low[2]; buffer[5 * stride] = high[2]
@@ -256,20 +275,35 @@ func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[24 * stride], buffer[25 * stride], buffer[26 * stride], buffer[27 * stride],
         buffer[28 * stride], buffer[29 * stride], buffer[30 * stride], buffer[31 * stride]
     )
+
     let highShifted = SIMD16<Int16>(
         high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6],
         high[7], high[8], high[9], high[10], high[11], high[12], high[13], high[14]
     )
     low &-= (highShifted &+ high &+ 2) &>> 2
+
     let lowShifted = SIMD16<Int16>(
         low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8],
         low[9], low[10], low[11], low[12], low[13], low[14], low[15], low[15]
     )
     high &+= (low &+ lowShifted) &>> 1
-    for i in 0..<16 {
-        buffer[2 * i * stride] = low[i]
-        buffer[(2 * i + 1) * stride] = high[i]
-    }
+
+    buffer[0 * stride] = low[0]; buffer[1 * stride] = high[0]
+    buffer[2 * stride] = low[1]; buffer[3 * stride] = high[1]
+    buffer[4 * stride] = low[2]; buffer[5 * stride] = high[2]
+    buffer[6 * stride] = low[3]; buffer[7 * stride] = high[3]
+    buffer[8 * stride] = low[4]; buffer[9 * stride] = high[4]
+    buffer[10 * stride] = low[5]; buffer[11 * stride] = high[5]
+    buffer[12 * stride] = low[6]; buffer[13 * stride] = high[6]
+    buffer[14 * stride] = low[7]; buffer[15 * stride] = high[7]
+    buffer[16 * stride] = low[8]; buffer[17 * stride] = high[8]
+    buffer[18 * stride] = low[9]; buffer[19 * stride] = high[9]
+    buffer[20 * stride] = low[10]; buffer[21 * stride] = high[10]
+    buffer[22 * stride] = low[11]; buffer[23 * stride] = high[11]
+    buffer[24 * stride] = low[12]; buffer[25 * stride] = high[12]
+    buffer[26 * stride] = low[13]; buffer[27 * stride] = high[13]
+    buffer[28 * stride] = low[14]; buffer[29 * stride] = high[14]
+    buffer[30 * stride] = low[15]; buffer[31 * stride] = high[15]
 }
 
 // MARK: - Specialized 2D DWT
