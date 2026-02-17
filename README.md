@@ -33,6 +33,47 @@ This approach eliminates the need for server-side resizing or re-compression. Th
 
 The `One` mode is designed for scenarios where speed is the top priority. Unlike the default multi-resolution format, it stores the image as a single data layer without a progressive structure. This reduces processing overhead for both encoding and decoding while maintaining the same image quality.
 
+# DATA LAYOUT
+
+```text
+                                     VEIF File Structure (Default)
++--------------------------------------------------------------------------------+
+|                                         Container                              |
++--------------------------+--------------------------+--------------------------+
+|          Layer 0         |          Layer 1         |          Layer 2         |
++-------------+------------+-------------+------------+-------------+------------+
+| Size (4B)   | Body (N)   | Size (4B)   | Body (N)   | Size (4B)   | Body (N)   |
+| UInt32 BE   |            | UInt32 BE   |            | UInt32 BE   |            |
++-------------+------------+-------------+------------+-------------+------------+
+
+                                     VEIF File Structure (One Mode)
++--------------------------------------------------------------------------------+
+|                                         Container                              |
++--------------------------+-----------------------------------------------------+
+|          Layer 0         |
++-------------+------------+
+| Size (4B)   | Body (N)   |
+| UInt32 BE   |            |
++-------------+------------+
+
+                                     Layer Body Structure
++--------------------------+-------------------------------------+---------------------------------+
+|          Header          |              Metadata               |             Payload             |
++--------------+-----------+------------+------------+-----------+---------------------------------+
+| Magic (4B)   | Layer(1B) | Width (2B) | Height(2B) | QStep(1B) |           See Below             |
+| 'V''E''I''F' | 0 - 2     | UInt16 BE  | UInt16 BE  | UInt8     |                                 |
++--------------+-----------+------------+------------+-----------+---------------------------------+
+
+                                     Payload Structure
++------------------------------------+------------------------------------+------------------------------------+
+|              Y Plane               |              Cb Plane              |              Cr Plane              |
++------------+-----------------------+------------+-----------------------+------------+-----------------------+
+| Count (2B) |       Blocks...       | Count (2B) |       Blocks...       | Count (2B) |       Blocks...       |
+| UInt16 BE  | [Len(2B)+Data] * Count| UInt16 BE  | [Len(2B)+Data] * Count| UInt16 BE  | [Len(2B)+Data] * Count|
++------------+-----------------------+------------+-----------------------+------------+-----------------------+
+```
+
+
 # Performance
 
 | Layer         | Resolution | Size | Image |
