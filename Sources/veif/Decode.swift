@@ -117,8 +117,19 @@ func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, qt: QuantizationTa
     return planes
 }
 
-func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
+func decodeLayer(r: Data, layer: UInt8, prev: Image16, size: Int) async throws -> Image16 {
     var offset = 0
+    
+    guard (offset + 5) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
+    let header = r.subdata(in: offset..<(offset + 5)).withUnsafeBytes { Array($0) }
+    offset += 5
+    
+    guard header[0] == 0x56 && header[1] == 0x45 && header[2] == 0x49 && header[3] == 0x46 else { // check 'VEIF'
+         throw NSError(domain: "DecodeError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid Header"])
+    }
+    guard header[4] == layer else { // check layer
+        throw NSError(domain: "DecodeError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid Layer Number"])
+    }
     
     @inline(__always)
     func readUInt8() throws -> UInt8 {
@@ -277,8 +288,19 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
     return sub
 }
 
-func decodeBase(r: Data, size: Int) async throws -> Image16 {
+func decodeBase(r: Data, layer: UInt8, size: Int) async throws -> Image16 {
     var offset = 0
+    
+    guard (offset + 5) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
+    let header = r.subdata(in: offset..<(offset + 5)).withUnsafeBytes { Array($0) }
+    offset += 5
+    
+    guard header[0] == 0x56 && header[1] == 0x45 && header[2] == 0x49 && header[3] == 0x46 else { // check 'VEIF'
+         throw NSError(domain: "DecodeError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid Header"])
+    }
+    guard header[4] == layer else { // check layer
+        throw NSError(domain: "DecodeError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid Layer Number"])
+    }
     
     @inline(__always)
     func readUInt8() throws -> UInt8 {
@@ -456,13 +478,13 @@ public func decode(r: Data) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage)
     }
     
     let layer0Data = try readLayerData()
-    let layer0 = try await decodeBase(r: layer0Data, size: 8)
+    let layer0 = try await decodeBase(r: layer0Data, layer: 0, size: 8)
     
     let layer1Data = try readLayerData()
-    let layer1 = try await decodeLayer(r: layer1Data, prev: layer0, size: 16)
+    let layer1 = try await decodeLayer(r: layer1Data, layer: 1, prev: layer0, size: 16)
     
     let layer2Data = try readLayerData()
-    let layer2 = try await decodeLayer(r: layer2Data, prev: layer1, size: 32)
+    let layer2 = try await decodeLayer(r: layer2Data, layer: 2, prev: layer1, size: 32)
     
     return (layer0.toYCbCr(), layer1.toYCbCr(), layer2.toYCbCr())
 }
@@ -486,7 +508,7 @@ public func decodeLayer0(r: Data) async throws -> YCbCrImage {
     }
     
     let layer0Data = try readLayerData()
-    let layer0 = try await decodeBase(r: layer0Data, size: 8)
+    let layer0 = try await decodeBase(r: layer0Data, layer: 0, size: 8)
     
     return layer0.toYCbCr()
 }
@@ -496,11 +518,11 @@ public func decodeLayers(data: Data...) async throws -> YCbCrImage {
         throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "No data provided"])
     }
     
-    var current = try await decodeBase(r: base, size: 8)
+    var current = try await decodeBase(r: base, layer: 0, size: 8)
     var currentSize = 16
-    
+
     for i in 1..<data.count {
-        current = try await decodeLayer(r: data[i], prev: current, size: currentSize)
+        current = try await decodeLayer(r: data[i], layer: UInt8(i), prev: current, size: currentSize)
         currentSize *= 2
     }
     
@@ -526,7 +548,7 @@ public func decodeOne(r: Data) async throws -> YCbCrImage {
     }
     
     let layerOneData = try readLayerData()
-    let layerOne = try await decodeBase(r: layerOneData, size: 32)
+    let layerOne = try await decodeBase(r: layerOneData, layer: 0, size: 32)
     
     return layerOne.toYCbCr()
 }

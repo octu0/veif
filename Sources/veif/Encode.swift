@@ -113,7 +113,7 @@ func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: Quantizatio
     return data as Data
 }
 
-func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> (Data, Image16) {
+func encodeLayer(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable) async throws -> (Data, Image16) {
     var bufY: [Data] = []
     var bufCb: [Data] = []
     var bufCr: [Data] = []
@@ -208,6 +208,7 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
     }
     
     var out = Data()
+    out.append(contentsOf: [0x56, 0x45, 0x49, 0x46, layer]) // 'VEIF' + layer
     withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
     withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
@@ -231,6 +232,120 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
     }
     
     return (out, sub)
+}
+
+
+func encodeBase(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable) async throws -> Data {
+    var bufY: [Data] = []
+    var bufCb: [Data] = []
+    var bufCr: [Data] = []
+    
+    let dx = r.width
+    let dy = r.height
+    
+    // Y
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: dy, by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: dx, by: size) {
+                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufY.append(data)
+            }
+        }
+    }
+    
+    // Cb
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCb.append(data)
+            }
+        }
+    }
+    
+    // Cr
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCr.append(data)
+            }
+        }
+    }
+    
+    var out = Data()
+    out.append(contentsOf: [0x56, 0x45, 0x49, 0x46, layer]) // 'VEIF' + layer
+    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
+    
+    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufY {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCb {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCr {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    return out
 }
 
 private func estimateRiceBitsDPCM(block: BlockView, size: Int) -> Int {
@@ -371,13 +486,13 @@ public func encode(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
     let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, qt: qt)
+    let (layer2, sub2) = try await encodeLayer(r: r2, layer: 2, size: 32, qt: qt)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, qt: qt)
+    let (layer1, sub1) = try await encodeLayer(r: r1, layer: 1, size: 16, qt: qt)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try await encodeBase(r: r0, size: 8, qt: qt)
+    let layer0 = try await encodeBase(r: r0, layer: 0, size: 8, qt: qt)
     
     var out = Data()
     
@@ -397,13 +512,13 @@ public func encodeLayers(img: YCbCrImage, maxbitrate: Int) async throws -> (Data
     let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r2 = ImageReader(img: img)
-    let (layer2, sub2) = try await encodeLayer(r: r2, size: 32, qt: qt)
+    let (layer2, sub2) = try await encodeLayer(r: r2, layer: 2, size: 32, qt: qt)
     
     let r1 = ImageReader(img: sub2.toYCbCr())
-    let (layer1, sub1) = try await encodeLayer(r: r1, size: 16, qt: qt)
+    let (layer1, sub1) = try await encodeLayer(r: r1, layer: 1, size: 16, qt: qt)
     
     let r0 = ImageReader(img: sub1.toYCbCr())
-    let layer0 = try await encodeBase(r: r0, size: 8, qt: qt)
+    let layer0 = try await encodeBase(r: r0, layer: 0, size: 8, qt: qt)
     
     return (layer0, layer1, layer2)
 }
@@ -412,124 +527,12 @@ public func encodeOne(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
    let qt = estimateQuantization(img: img, targetBits: maxbitrate)
 
     let r = ImageReader(img: img)
-    let layer = try await encodeBase(r: r, size: 32, qt: qt)
+    let layer = try await encodeBase(r: r, layer: 0, size: 32, qt: qt)
 
     var out = Data()
     
     withUnsafeBytes(of: UInt32(layer.count).bigEndian) { out.append(contentsOf: $0) }
     out.append(layer)
-    
-    return out
-}
-
-func encodeBase(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> Data {
-    var bufY: [Data] = []
-    var bufCb: [Data] = []
-    var bufCr: [Data] = []
-    
-    let dx = r.width
-    let dy = r.height
-    
-    // Y
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: dy, by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: dx, by: size) {
-                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufY.append(data)
-            }
-        }
-    }
-    
-    // Cb
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufCb.append(data)
-            }
-        }
-    }
-    
-    // Cr
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufCr.append(data)
-            }
-        }
-    }
-    
-    var out = Data()
-    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
-    
-    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufY {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
-    
-    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufCb {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
-    
-    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufCr {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
     
     return out
 }
