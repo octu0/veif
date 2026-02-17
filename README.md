@@ -1,6 +1,6 @@
 # veif
 
-**veif** is a high-performance, multi-resolution image format.
+**veif** is a pragmatic, high-performance image format designed for efficient multi-resolution delivery.
 
 The core philosophy of **veif** is speed and efficiency—not just in compression, but in distribution.
 
@@ -59,6 +59,20 @@ The `One` mode is designed for scenarios where speed is the top priority. Unlike
 
 ![compare resolution quality mm-ssim](docs/compare_resolution_quality_ms-ssim.png)
 
+## When to use veif? (vs. AVIF / JPEG XL)
+
+While next-generation formats like AVIF or JPEG XL focus on achieving the absolute highest compression ratios, they often come with significant computational complexity.  
+**veif** takes a more **pragmatic** approach, optimizing for delivery speed and infrastructural efficiency over extreme compression.
+
+- **Use AVIF or JPEG XL when:**
+  - You need maximum compression for archival storage.
+  - Saving every single byte of bandwidth is your absolute top priority, and you can afford the high CPU cost (and latency) for encoding and decoding.
+
+- **Use veif when:**
+  - You need to serve multiple resolutions (thumbnail, preview, full-size) dynamically and instantly from a single master file.
+  - You want to completely eliminate server-side resizing and re-encoding costs (e.g., slicing the binary directly at the CDN edge).
+  - You are processing user-uploaded images in real-time and require lightning-fast, highly stable encode/decode speeds comparable to heavily optimized JPEG implementations.
+
 # Usage
 
 ```swift
@@ -114,6 +128,7 @@ let decodedLayers = try await decodeLayers(data: e0, e1, e2)
   - **Quantization**: Block-based quantization and dequantization use AVX/NEON for parallel processing.
 - **Memory Management**:
   - Unsafe buffer pointers are used throughout the pipeline (ImageReader, DWT, Quantization) to minimize ARC overhead and bounds checking.
+  - Object Pooling & Instance Reuse.
 
 ## CLI Usage
 
