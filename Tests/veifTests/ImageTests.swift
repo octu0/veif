@@ -6,14 +6,16 @@ final class ImageTests: XCTestCase {
     func testUpdateY() {
         var image = Image16(width: 8, height: 8)
         var block = Block2D(width: 4, height: 4)
-        for h in 0..<4 {
-            for w in 0..<4 {
-                block[h, w] = Int16(h * 4 + w + 1)
+        block.withView { v in
+            for h in 0..<4 {
+                for w in 0..<4 {
+                    v[h, w] = Int16(h * 4 + w + 1)
+                }
             }
         }
         
         // Normal update
-        image.updateY(data: block, startX: 0, startY: 0, size: 4)
+        image.updateY(data: &block, startX: 0, startY: 0, size: 4)
         
         for h in 0..<4 {
             for w in 0..<4 {
@@ -22,7 +24,7 @@ final class ImageTests: XCTestCase {
         }
         
         // Boundary update (clipping)
-        image.updateY(data: block, startX: 6, startY: 6, size: 4)
+        image.updateY(data: &block, startX: 6, startY: 6, size: 4)
         // Should update (6,6), (6,7), (7,6), (7,7)
         // Block data indices:
         // h=0, w=0 -> 1 -> img[6][6]
@@ -36,21 +38,23 @@ final class ImageTests: XCTestCase {
         XCTAssertEqual(image.y[7][7], 6)
         
         // Ensure no overflow / crash for out of bounds
-        image.updateY(data: block, startX: 8, startY: 8, size: 4) // Completely out
-        image.updateY(data: block, startX: -10, startY: -10, size: 4) // Negative out (though size is usually positive, logic handles startX/Y relative to loops)
+        image.updateY(data: &block, startX: 8, startY: 8, size: 4) // Completely out
+        image.updateY(data: &block, startX: -10, startY: -10, size: 4) // Negative out (though size is usually positive, logic handles startX/Y relative to loops)
     }
 
     func testUpdateCb() {
         var image = Image16(width: 8, height: 8)
         // Cb size is 4x4
         var block = Block2D(width: 2, height: 2)
-        block[0, 0] = 10
-        block[0, 1] = 20
-        block[1, 0] = 30
-        block[1, 1] = 40
+        block.withView { v in
+            v[0, 0] = 10
+            v[0, 1] = 20
+            v[1, 0] = 30
+            v[1, 1] = 40
+        }
         
         // Normal update
-        image.updateCb(data: block, startX: 0, startY: 0, size: 2)
+        image.updateCb(data: &block, startX: 0, startY: 0, size: 2)
         XCTAssertEqual(image.cb[0][0], 10)
         XCTAssertEqual(image.cb[0][1], 20)
         XCTAssertEqual(image.cb[1][0], 30)
@@ -60,7 +64,7 @@ final class ImageTests: XCTestCase {
         // Cb width is 4. startX=3. size=2.
         // w=0 -> x=3. valid.
         // w=1 -> x=4. invalid (width is 4, indices 0..3).
-        image.updateCb(data: block, startX: 3, startY: 0, size: 2)
+        image.updateCb(data: &block, startX: 3, startY: 0, size: 2)
         XCTAssertEqual(image.cb[0][3], 10)
         // cb[0][4] should not be touched / exist (out of bounds)
         
@@ -73,16 +77,18 @@ final class ImageTests: XCTestCase {
         
         // Boundary Height
         // Cb height 4. startY=3. size=2.
-        image.updateCb(data: block, startX: 0, startY: 3, size: 2)
+        image.updateCb(data: &block, startX: 0, startY: 3, size: 2)
         XCTAssertEqual(image.cb[3][0], 10)
     }
 
     func testUpdateCr() {
         var image = Image16(width: 8, height: 8)
         var block = Block2D(width: 2, height: 2)
-        block[0, 0] = 99
+        block.withView { v in
+            v[0, 0] = 99
+        }
         
-        image.updateCr(data: block, startX: 0, startY: 0, size: 2)
+        image.updateCr(data: &block, startX: 0, startY: 0, size: 2)
         XCTAssertEqual(image.cr[0][0], 99)
     }
 

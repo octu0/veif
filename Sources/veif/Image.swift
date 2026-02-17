@@ -346,10 +346,12 @@ public struct Image16: Sendable {
     @inline(__always)
     public func getY(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
-        for h in 0..<size {
-            for w in 0..<size {
-                let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
-                block[h, w] = self.y[py][px]
+        block.withView { v in
+            for h in 0..<size {
+                for w in 0..<size {
+                    let (px, py) = boundaryRepeat(width, height, (x + w), (y + h))
+                    v[h, w] = self.y[py][px]
+                }
             }
         }
         return block
@@ -358,10 +360,12 @@ public struct Image16: Sendable {
     @inline(__always)
     public func getCb(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
-        for h in 0..<size {
-            for w in 0..<size {
-                let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                block[h, w] = self.cb[py][px]
+        block.withView { v in
+            for h in 0..<size {
+                for w in 0..<size {
+                    let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                    v[h, w] = self.cb[py][px]
+                }
             }
         }
         return block
@@ -370,17 +374,19 @@ public struct Image16: Sendable {
     @inline(__always)
     public func getCr(x: Int, y: Int, size: Int) -> Block2D {
         var block = Block2D(width: size, height: size)
-        for h in 0..<size {
-            for w in 0..<size {
-                let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
-                block[h, w] = self.cr[py][px]
+        block.withView { v in
+            for h in 0..<size {
+                for w in 0..<size {
+                    let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                    v[h, w] = self.cr[py][px]
+                }
             }
         }
         return block
     }
     
     @inline(__always)
-    public mutating func updateY(data: Block2D, startX: Int, startY: Int, size: Int) {
+    public mutating func updateY(data: inout Block2D, startX: Int, startY: Int, size: Int) {
         let validStartY = max(0, startY)
         let validStartX = max(0, startX)
         let validEndY = min(height, startY + size)
@@ -396,12 +402,12 @@ public struct Image16: Sendable {
         
         for h in 0..<loopH {
             self.y[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
-                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
-                    guard let destBase = destPtr.baseAddress,
-                          let srcBase = srcPtr.baseAddress else { return }
+                data.withView { v in
+                    let srcPtr = v.rowPointer(y: dataOffsetY + h)
+                    guard let destBase = destPtr.baseAddress else { return }
                     
                     let destStart = destBase.advanced(by: validStartX)
-                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    let srcStart = srcPtr.advanced(by: dataOffsetX)
                     destStart.update(from: srcStart, count: loopW)
                 }
             }
@@ -409,7 +415,7 @@ public struct Image16: Sendable {
     }
     
     @inline(__always)
-    public mutating func updateCb(data: Block2D, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCb(data: inout Block2D, startX: Int, startY: Int, size: Int) {
         let halfHeight = (height / 2)
         let halfWidth = (width / 2)
         
@@ -428,12 +434,12 @@ public struct Image16: Sendable {
         
         for h in 0..<loopH {
             self.cb[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
-                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
-                    guard let destBase = destPtr.baseAddress,
-                          let srcBase = srcPtr.baseAddress else { return }
+                data.withView { v in
+                    let srcPtr = v.rowPointer(y: dataOffsetY + h)
+                    guard let destBase = destPtr.baseAddress else { return }
                     
                     let destStart = destBase.advanced(by: validStartX)
-                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    let srcStart = srcPtr.advanced(by: dataOffsetX)
                     destStart.update(from: srcStart, count: loopW)
                 }
             }
@@ -441,7 +447,7 @@ public struct Image16: Sendable {
     }
     
     @inline(__always)
-    public mutating func updateCr(data: Block2D, startX: Int, startY: Int, size: Int) {
+    public mutating func updateCr(data: inout Block2D, startX: Int, startY: Int, size: Int) {
         let halfHeight = (height / 2)
         let halfWidth = (width / 2)
         
@@ -460,12 +466,12 @@ public struct Image16: Sendable {
         
         for h in 0..<loopH {
             self.cr[validStartY + h].withUnsafeMutableBufferPointer { destPtr in
-                data.withUnsafeBufferPointer(atRow: dataOffsetY + h) { srcPtr in
-                    guard let destBase = destPtr.baseAddress,
-                          let srcBase = srcPtr.baseAddress else { return }
+                data.withView { v in
+                    let srcPtr = v.rowPointer(y: dataOffsetY + h)
+                    guard let destBase = destPtr.baseAddress else { return }
                     
                     let destStart = destBase.advanced(by: validStartX)
-                    let srcStart = srcBase.advanced(by: dataOffsetX)
+                    let srcStart = srcPtr.advanced(by: dataOffsetX)
                     destStart.update(from: srcStart, count: loopW)
                 }
             }

@@ -10,26 +10,34 @@ func toUint16(_ n: Int16) -> UInt16 {
 }
 
 @inline(__always)
-func blockEncode(rw: inout RiceWriter, block: Block2D, size: Int) {
-    for i in 0..<(size * size) {
-        rw.write(val: UInt16(bitPattern: block.data[i]), k: k)
+func blockEncode(rw: inout RiceWriter, block: BlockView, size: Int) {
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
+            rw.write(val: UInt16(bitPattern: ptr[x]), k: k)
+        }
     }
 }
 
 @inline(__always)
-func blockEncodeDPCM(rw: inout RiceWriter, block: Block2D, size: Int) {
+func blockEncodeDPCM(rw: inout RiceWriter, block: BlockView, size: Int) {
     var prevVal: Int16 = 0
-    for i in 0..<(size * size) {
-        let val = block.data[i]
-        let diff = val - prevVal
-        rw.write(val: toUint16(diff), k: k)
-        prevVal = val
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
+            let val = ptr[x]
+            let diff = val - prevVal
+            rw.write(val: toUint16(diff), k: k)
+            prevVal = val
+        }
     }
 }
 
 @inline(__always)
 func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws -> Block2D {
-    var sub = dwt2d(&block, size: size)
+    var sub = block.withView { view in
+        return dwt2d(&view, size: size)
+    }
     
     quantizeMidSignedMapping(&sub.hl, qt: qt)
     quantizeMidSignedMapping(&sub.lh, qt: qt)
@@ -41,12 +49,24 @@ func transformLayer(data: NSMutableData, block: inout Block2D, size: Int, qt: Qu
     blockEncode(rw: &rw, block: sub.hh, size: sub.size)
     rw.flush()
     
-    return sub.ll
+    // Return LL as a new Block2D (still needed for next layer's input)
+    var llBlock = Block2D(width: sub.size, height: sub.size)
+    llBlock.withView { dest in
+        let src = sub.ll
+        for y in 0..<sub.size {
+            let srcPtr = src.rowPointer(y: y)
+            let destPtr = dest.rowPointer(y: y)
+            memcpy(destPtr, srcPtr, sub.size * MemoryLayout<Int16>.size)
+        }
+    }
+    return llBlock
 }
 
 @inline(__always)
 func transformBase(data: NSMutableData, block: inout Block2D, size: Int, qt: QuantizationTable) throws {
-    var sub = dwt2d(&block, size: size)
+    var sub = block.withView { view in
+        return dwt2d(&view, size: size)
+    }
     
     quantizeLow(&sub.ll, qt: qt)
     quantizeMidSignedMapping(&sub.hl, qt: qt)
@@ -64,9 +84,11 @@ func transformBase(data: NSMutableData, block: inout Block2D, size: Int, qt: Qua
 @inline(__always)
 func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> (Data, Block2D) {
     var block = Block2D(width: size, height: size)
-    for i in 0..<size {
-        let row = rows(w, (h + i), size)
-        block.setRow(offsetY: i, size: size, row: row)
+    block.withView { view in
+        for i in 0..<size {
+            let row = rows(w, (h + i), size)
+            view.setRow(offsetY: i, row: row)
+        }
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
@@ -78,9 +100,11 @@ func transformLayerFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: Quantizati
 @inline(__always)
 func transformBaseFunc(rows: RowFunc, w: Int, h: Int, size: Int, qt: QuantizationTable) throws -> Data {
     var block = Block2D(width: size, height: size)
-    for i in 0..<size {
-        let row = rows(w, (h + i), size)
-        block.setRow(offsetY: i, size: size, row: row)
+    block.withView { view in
+        for i in 0..<size {
+            let row = rows(w, (h + i), size)
+            view.setRow(offsetY: i, row: row)
+        }
     }
     
     let data = NSMutableData(capacity: size * size) ?? NSMutableData()
@@ -118,10 +142,11 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (data, ll, w, h) in rowBlocks {
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let (data, _, w, h) = results[i].1[j]
                 bufY.append(data)
-                sub.updateY(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+                sub.updateY(data: &results[i].1[j].1, startX: (w / 2), startY: (h / 2), size: (size / 2))
             }
         }
     }
@@ -145,10 +170,11 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (data, ll, w, h) in rowBlocks {
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let (data, _, w, h) = results[i].1[j]
                 bufCb.append(data)
-                sub.updateCb(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+                sub.updateCb(data: &results[i].1[j].1, startX: (w / 2), startY: (h / 2), size: (size / 2))
             }
         }
     }
@@ -172,10 +198,11 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (data, ll, w, h) in rowBlocks {
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let (data, _, w, h) = results[i].1[j]
                 bufCr.append(data)
-                sub.updateCr(data: ll, startX: (w / 2), startY: (h / 2), size: (size / 2))
+                sub.updateCr(data: &results[i].1[j].1, startX: (w / 2), startY: (h / 2), size: (size / 2))
             }
         }
     }
@@ -206,128 +233,15 @@ func encodeLayer(r: ImageReader, size: Int, qt: QuantizationTable) async throws 
     return (out, sub)
 }
 
-func encodeBase(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> Data {
-    var bufY: [Data] = []
-    var bufCb: [Data] = []
-    var bufCr: [Data] = []
-    
-    let dx = r.width
-    let dy = r.height
-    
-    // Y
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: dy, by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: dx, by: size) {
-                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufY.append(data)
-            }
-        }
-    }
-    
-    // Cb
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufCb.append(data)
-            }
-        }
-    }
-    
-    // Cr
-    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            group.addTask {
-                var rowResults: [(Data, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
-                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
-                    rowResults.append((data, w, h))
-                }
-                return (h, rowResults)
-            }
-        }
-        
-        var results: [(Int, [(Data, Int, Int)])] = []
-        for try await res in group {
-            results.append(res)
-        }
-        results.sort { $0.0 < $1.0 }
-        
-        for (_, rowBlocks) in results {
-            for (data, _, _) in rowBlocks {
-                bufCr.append(data)
-            }
-        }
-    }
-    
-    var out = Data()
-    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
-    
-    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufY {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
-    
-    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufCb {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
-    
-    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
-    for b in bufCr {
-        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
-        out.append(b)
-    }
-    
-    return out
-}
-
-private func estimateRiceBitsDPCM(block: Block2D, size: Int) -> Int {
+private func estimateRiceBitsDPCM(block: BlockView, size: Int) -> Int {
     var sumDiffAbs = 0
-    var count = 0
+    let count = size * size
     var prev: Int16 = 0
     
-    block.data.withUnsafeBufferPointer { ptr in
-        let len = size * size
-        count = len
-        for i in 0..<len {
-            let val = ptr[i]
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
+            let val = ptr[x]
             let diff = abs(Int(val - prev))
             sumDiffAbs += diff
             prev = val
@@ -348,14 +262,16 @@ private func estimateRiceBitsDPCM(block: Block2D, size: Int) -> Int {
 
 private func fetchBlock(reader: ImageReader, plane: PlaneType, x: Int, y: Int, w: Int, h: Int) -> Block2D {
     var block = Block2D(width: w, height: h)
-    for i in 0..<h {
-        let row: [Int16]
-        switch plane {
-        case .y:  row = reader.rowY(x: x, y: y + i, size: w)
-        case .cb: row = reader.rowCb(x: x, y: y + i, size: w)
-        case .cr: row = reader.rowCr(x: x, y: y + i, size: w)
+    block.withView { view in
+        for i in 0..<h {
+            let row: [Int16]
+            switch plane {
+            case .y:  row = reader.rowY(x: x, y: y + i, size: w)
+            case .cb: row = reader.rowCb(x: x, y: y + i, size: w)
+            case .cr: row = reader.rowCr(x: x, y: y + i, size: w)
+            }
+            view.setRow(offsetY: i, row: row)
         }
-        block.setRow(offsetY: i, size: w, row: row)
     }
     return block
 }
@@ -363,7 +279,9 @@ private func fetchBlock(reader: ImageReader, plane: PlaneType, x: Int, y: Int, w
 private enum PlaneType { case y, cb, cr }
 
 private func measureBlockBits(block: inout Block2D, size: Int, qt: QuantizationTable) -> Int {
-    var sub = dwt2d(&block, size: size)
+    var sub = block.withView { view in
+        return dwt2d(&view, size: size)
+    }
     
     quantizeLow(&sub.ll, qt: qt)
     quantizeMid(&sub.hl, qt: qt)
@@ -379,15 +297,14 @@ private func measureBlockBits(block: inout Block2D, size: Int, qt: QuantizationT
     return bits
 }
 
-private func estimateRiceBits(block: Block2D, size: Int) -> Int {
+private func estimateRiceBits(block: BlockView, size: Int) -> Int {
     var sumAbs = 0
-    var count = 0
+    let count = size * size
     
-    block.data.withUnsafeBufferPointer { ptr in
-        let len = size * size
-        count = len
-        for i in 0..<len {
-            sumAbs += abs(Int(ptr[i]))
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
+            sumAbs += abs(Int(ptr[x]))
         }
     }
     
@@ -501,6 +418,118 @@ public func encodeOne(img: YCbCrImage, maxbitrate: Int) async throws -> Data {
     
     withUnsafeBytes(of: UInt32(layer.count).bigEndian) { out.append(contentsOf: $0) }
     out.append(layer)
+    
+    return out
+}
+
+func encodeBase(r: ImageReader, size: Int, qt: QuantizationTable) async throws -> Data {
+    var bufY: [Data] = []
+    var bufCb: [Data] = []
+    var bufCr: [Data] = []
+    
+    let dx = r.width
+    let dy = r.height
+    
+    // Y
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: dy, by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: dx, by: size) {
+                    let data = try transformBaseFunc(rows: r.rowY, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufY.append(data)
+            }
+        }
+    }
+    
+    // Cb
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCb.append(data)
+            }
+        }
+    }
+    
+    // Cr
+    try await withThrowingTaskGroup(of: (Int, [(Data, Int, Int)]).self) { group in
+        for h in stride(from: 0, to: (dy / 2), by: size) {
+            group.addTask {
+                var rowResults: [(Data, Int, Int)] = []
+                for w in stride(from: 0, to: (dx / 2), by: size) {
+                    let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
+                    rowResults.append((data, w, h))
+                }
+                return (h, rowResults)
+            }
+        }
+        
+        var results: [(Int, [(Data, Int, Int)])] = []
+        for try await res in group {
+            results.append(res)
+        }
+        results.sort { $0.0 < $1.0 }
+        
+        for (_, rowBlocks) in results {
+            for (data, _, _) in rowBlocks {
+                bufCr.append(data)
+            }
+        }
+    }
+    
+    var out = Data()
+    withUnsafeBytes(of: UInt16(dx).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt16(dy).bigEndian) { out.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt8(qt.step).bigEndian) { out.append(contentsOf: $0) }
+    
+    withUnsafeBytes(of: UInt16(bufY.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufY {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCb.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCb {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
+    
+    withUnsafeBytes(of: UInt16(bufCr.count).bigEndian) { out.append(contentsOf: $0) }
+    for b in bufCr {
+        withUnsafeBytes(of: UInt16(b.count).bigEndian) { out.append(contentsOf: $0) }
+        out.append(b)
+    }
     
     return out
 }

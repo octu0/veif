@@ -52,10 +52,12 @@ private func referenceDequantizeSignedMapping(_ data: inout Block2D, size: Int, 
 
 private func makeTestBlock(size: Int, seed: Int16) -> Block2D {
     var block = Block2D(width: size, height: size)
-    for y in 0..<size {
-        for x in 0..<size {
-            let val = Int16(((y * size) + x)) &- seed
-            block[y, x] = val
+    block.withView { v in
+        for y in 0..<size {
+            for x in 0..<size {
+                let val = Int16(((y * size) + x)) &- seed
+                v[y, x] = val
+            }
         }
     }
     return block
@@ -73,7 +75,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: 8)
         var expected = actual
 
-        quantizeLow(&actual, qt: qt)
+        actual.withView { v in quantizeLow(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qLow)
 
         #expect(actual.data == expected.data, "data mismatch")
@@ -86,7 +88,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: 32)
         var expected = actual
 
-        quantizeLow(&actual, qt: qt)
+        actual.withView { v in quantizeLow(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qLow)
 
         #expect(actual.data == expected.data, "data mismatch")
@@ -99,7 +101,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: 128)
         var expected = actual
 
-        quantizeLow(&actual, qt: qt)
+        actual.withView { v in quantizeLow(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qLow)
 
         #expect(actual.data == expected.data, "data mismatch")
@@ -112,7 +114,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: 512)
         var expected = actual
 
-        quantizeLow(&actual, qt: qt)
+        actual.withView { v in quantizeLow(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qLow)
 
         #expect(actual.data == expected.data, "data mismatch")
@@ -125,7 +127,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeMid(&actual, qt: qt)
+        actual.withView { v in quantizeMid(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qMid)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -138,7 +140,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeHigh(&actual, qt: qt)
+        actual.withView { v in quantizeHigh(&v, qt: qt) }
         referenceQuantize(&expected, size: size, q: qt.qHigh)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -151,7 +153,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeMidSignedMapping(&actual, qt: qt)
+        actual.withView { v in quantizeMidSignedMapping(&v, qt: qt) }
         referenceQuantizeSignedMapping(&expected, size: size, q: qt.qMid)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -164,7 +166,7 @@ struct QuantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size))
         var expected = actual
 
-        quantizeHighSignedMapping(&actual, qt: qt)
+        actual.withView { v in quantizeHighSignedMapping(&v, qt: qt) }
         referenceQuantizeSignedMapping(&expected, size: size, q: qt.qHigh)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -183,7 +185,7 @@ struct DequantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeLow(&actual, qt: qt)
+        actual.withView { v in dequantizeLow(&v, qt: qt) }
         referenceDequantize(&expected, size: size, q: qt.qLow)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -196,7 +198,7 @@ struct DequantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeMid(&actual, qt: qt)
+        actual.withView { v in dequantizeMid(&v, qt: qt) }
         referenceDequantize(&expected, size: size, q: qt.qMid)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -209,7 +211,7 @@ struct DequantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeHigh(&actual, qt: qt)
+        actual.withView { v in dequantizeHigh(&v, qt: qt) }
         referenceDequantize(&expected, size: size, q: qt.qHigh)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -222,7 +224,7 @@ struct DequantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeMidSignedMapping(&actual, qt: qt)
+        actual.withView { v in dequantizeMidSignedMapping(&v, qt: qt) }
         referenceDequantizeSignedMapping(&expected, size: size, q: qt.qMid)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -235,7 +237,7 @@ struct DequantizeSIMDTests {
         var actual = makeTestBlock(size: size, seed: Int16(size / 2))
         var expected = actual
 
-        dequantizeHighSignedMapping(&actual, qt: qt)
+        actual.withView { v in dequantizeHighSignedMapping(&v, qt: qt) }
         referenceDequantizeSignedMapping(&expected, size: size, q: qt.qHigh)
 
         #expect(actual.data == expected.data, "size=\(size) data mismatch")
@@ -256,9 +258,9 @@ struct QuantRoundtripTests {
         let original = block
 
         // quantize (Low)
-        quantizeLow(&block, qt: qt)
+        block.withView { v in quantizeLow(&v, qt: qt) }
         // dequantize (Low)
-        dequantizeLow(&block, qt: qt)
+        block.withView { v in dequantizeLow(&v, qt: qt) }
 
         // Confirm it's within the quantization error range after roundtrip
         let maxError = Int16(qt.qLow.step)

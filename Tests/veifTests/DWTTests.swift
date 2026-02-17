@@ -73,16 +73,26 @@ struct DWTTests {
     func dwt2dRoundtrip(seed: Int) {
         let size = 32
         var block = Block2D(width: size, height: size)
-        for y in 0..<size {
-             for x in 0..<size {
-                 block[y, x] = Int16((y * size + x))
+        
+        // Block2D no longer exposes direct subscript if removed?
+        // Wait, I didn't remove subscript from Block2D yet, but I should use withView just in case or keep it as helper.
+        // Let's use withView to set data properly or just assume subscript works if I kept it.
+        // I'll keep subscript in Block2D for convenience in tests.
+        
+        block.withView { view in
+             for y in 0..<size {
+                 for x in 0..<size {
+                     view[y, x] = Int16((y * size + x))
+                 }
              }
         }
         let originalData = block.data
         
-        let sub = dwt2d(&block, size: size)
-        let restored = invDwt2d(sub)
+        block.withView { view in
+            _ = dwt2d(&view, size: size)
+            invDwt2d(&view, size: size)
+        }
         
-        #expect(restored.data == originalData, "2D DWT roundtrip failed")
+        #expect(block.data == originalData, "2D DWT roundtrip failed")
     }
 }

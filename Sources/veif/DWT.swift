@@ -3,11 +3,23 @@ import Foundation
 // MARK: - DWT Structures
 
 public struct Subbands {
-    public var ll: Block2D
-    public var hl: Block2D
-    public var lh: Block2D
-    public var hh: Block2D
+    public var ll: BlockView
+    public var hl: BlockView
+    public var lh: BlockView
+    public var hh: BlockView
     public let size: Int
+}
+
+@inline(__always)
+private func makeSubbands(base: UnsafeMutablePointer<Int16>, size: Int, stride: Int) -> Subbands {
+    let half = size / 2
+    return Subbands(
+        ll: BlockView(base: base, width: half, height: half, stride: stride),
+        hl: BlockView(base: base.advanced(by: half), width: half, height: half, stride: stride),
+        lh: BlockView(base: base.advanced(by: half * stride), width: half, height: half, stride: stride),
+        hh: BlockView(base: base.advanced(by: half * stride + half), width: half, height: half, stride: stride),
+        size: half
+    )
 }
 
 // MARK: - LeGall 5/3 Lifting
@@ -132,33 +144,18 @@ internal func invLift53Scalar(_ buffer: UnsafeMutableBufferPointer<Int16>, count
 
 @inline(__always)
 func lift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 8, half = 4
-    
-    // Split
-    // low: 0, 2, 4, 6
-    // high: 1, 3, 5, 7
-    // Access with stride: buffer[i * stride]
     var low = SIMD4<Int16>(buffer[0 * stride], buffer[2 * stride], buffer[4 * stride], buffer[6 * stride])
     var high = SIMD4<Int16>(buffer[1 * stride], buffer[3 * stride], buffer[5 * stride], buffer[7 * stride])
-    
-    // Predict
     let lowShifted = SIMD4<Int16>(low[1], low[2], low[3], low[3])
     high &-= (low &+ lowShifted) &>> 1
-    
-    // Update
     let highShifted = SIMD4<Int16>(high[0], high[0], high[1], high[2])
     low &+= (highShifted &+ high &+ 2) &>> 2
-    
-    // Merge
     buffer[0 * stride] = low[0]; buffer[1 * stride] = low[1]; buffer[2 * stride] = low[2]; buffer[3 * stride] = low[3]
     buffer[4 * stride] = high[0]; buffer[5 * stride] = high[1]; buffer[6 * stride] = high[2]; buffer[7 * stride] = high[3]
 }
 
 @inline(__always)
 func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 16, half = 8
-    
-    // Split
     var low = SIMD8<Int16>(
         buffer[0 * stride], buffer[2 * stride], buffer[4 * stride], buffer[6 * stride],
         buffer[8 * stride], buffer[10 * stride], buffer[12 * stride], buffer[14 * stride]
@@ -167,28 +164,18 @@ func lift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[1 * stride], buffer[3 * stride], buffer[5 * stride], buffer[7 * stride],
         buffer[9 * stride], buffer[11 * stride], buffer[13 * stride], buffer[15 * stride]
     )
-    
-    // Predict
     let lowShifted = SIMD8<Int16>(low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[7])
     high &-= (low &+ lowShifted) &>> 1
-    
-    // Update
     let highShifted = SIMD8<Int16>(high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6])
     low &+= (highShifted &+ high &+ 2) &>> 2
-    
-    // Merge
     buffer[0 * stride] = low[0]; buffer[1 * stride] = low[1]; buffer[2 * stride] = low[2]; buffer[3 * stride] = low[3]
     buffer[4 * stride] = low[4]; buffer[5 * stride] = low[5]; buffer[6 * stride] = low[6]; buffer[7 * stride] = low[7]
-    
     buffer[8 * stride] = high[0]; buffer[9 * stride] = high[1]; buffer[10 * stride] = high[2]; buffer[11 * stride] = high[3]
     buffer[12 * stride] = high[4]; buffer[13 * stride] = high[5]; buffer[14 * stride] = high[6]; buffer[15 * stride] = high[7]
 }
 
 @inline(__always)
 func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 32, half = 16
-    
-    // Split
     var low = SIMD16<Int16>(
         buffer[0 * stride], buffer[2 * stride], buffer[4 * stride], buffer[6 * stride],
         buffer[8 * stride], buffer[10 * stride], buffer[12 * stride], buffer[14 * stride],
@@ -201,22 +188,16 @@ func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[17 * stride], buffer[19 * stride], buffer[21 * stride], buffer[23 * stride],
         buffer[25 * stride], buffer[27 * stride], buffer[29 * stride], buffer[31 * stride]
     )
-    
-    // Predict
     let lowShifted = SIMD16<Int16>(
         low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8],
         low[9], low[10], low[11], low[12], low[13], low[14], low[15], low[15]
     )
     high &-= (low &+ lowShifted) &>> 1
-    
-    // Update
     let highShifted = SIMD16<Int16>(
         high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6],
         high[7], high[8], high[9], high[10], high[11], high[12], high[13], high[14]
     )
     low &+= (highShifted &+ high &+ 2) &>> 2
-    
-    // Merge
     for i in 0..<16 {
         buffer[(0 + i) * stride] = low[i]
         buffer[(16 + i) * stride] = high[i]
@@ -225,24 +206,12 @@ func lift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
 
 @inline(__always)
 func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 8, half = 4
-    
-    // Split
-    // low: data[0...3]
-    // high: data[4...7]
     var low = SIMD4<Int16>(buffer[0 * stride], buffer[1 * stride], buffer[2 * stride], buffer[3 * stride])
     var high = SIMD4<Int16>(buffer[4 * stride], buffer[5 * stride], buffer[6 * stride], buffer[7 * stride])
-    
-    // Inv Update
     let highShifted = SIMD4<Int16>(high[0], high[0], high[1], high[2])
     low &-= (highShifted &+ high &+ 2) &>> 2
-    
-    // Inv Predict
     let lowShifted = SIMD4<Int16>(low[1], low[2], low[3], low[3])
     high &+= (low &+ lowShifted) &>> 1
-    
-    // Merge (Interleave)
-    // data[2*i] = low[i], data[2*i+1] = high[i]
     buffer[0 * stride] = low[0]; buffer[1 * stride] = high[0]
     buffer[2 * stride] = low[1]; buffer[3 * stride] = high[1]
     buffer[4 * stride] = low[2]; buffer[5 * stride] = high[2]
@@ -251,9 +220,6 @@ func invLift53SIMD4(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
 
 @inline(__always)
 func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 16, half = 8
-    
-    // Split
     var low = SIMD8<Int16>(
         buffer[0 * stride], buffer[1 * stride], buffer[2 * stride], buffer[3 * stride],
         buffer[4 * stride], buffer[5 * stride], buffer[6 * stride], buffer[7 * stride]
@@ -262,21 +228,14 @@ func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[8 * stride], buffer[9 * stride], buffer[10 * stride], buffer[11 * stride],
         buffer[12 * stride], buffer[13 * stride], buffer[14 * stride], buffer[15 * stride]
     )
-    
-    // Inv Update
     let highShifted = SIMD8<Int16>(high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6])
     low &-= (highShifted &+ high &+ 2) &>> 2
-    
-    // Inv Predict
     let lowShifted = SIMD8<Int16>(low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[7])
     high &+= (low &+ lowShifted) &>> 1
-    
-    // Merge
     buffer[0 * stride] = low[0]; buffer[1 * stride] = high[0]
     buffer[2 * stride] = low[1]; buffer[3 * stride] = high[1]
     buffer[4 * stride] = low[2]; buffer[5 * stride] = high[2]
     buffer[6 * stride] = low[3]; buffer[7 * stride] = high[3]
-    
     buffer[8 * stride] = low[4]; buffer[9 * stride] = high[4]
     buffer[10 * stride] = low[5]; buffer[11 * stride] = high[5]
     buffer[12 * stride] = low[6]; buffer[13 * stride] = high[6]
@@ -285,9 +244,6 @@ func invLift53SIMD8(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
 
 @inline(__always)
 func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
-    // size = 32, half = 16
-    
-    // Split
     var low = SIMD16<Int16>(
         buffer[0 * stride], buffer[1 * stride], buffer[2 * stride], buffer[3 * stride],
         buffer[4 * stride], buffer[5 * stride], buffer[6 * stride], buffer[7 * stride],
@@ -300,22 +256,16 @@ func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
         buffer[24 * stride], buffer[25 * stride], buffer[26 * stride], buffer[27 * stride],
         buffer[28 * stride], buffer[29 * stride], buffer[30 * stride], buffer[31 * stride]
     )
-    
-    // Inv Update
     let highShifted = SIMD16<Int16>(
         high[0], high[0], high[1], high[2], high[3], high[4], high[5], high[6],
         high[7], high[8], high[9], high[10], high[11], high[12], high[13], high[14]
     )
     low &-= (highShifted &+ high &+ 2) &>> 2
-    
-    // Inv Predict
     let lowShifted = SIMD16<Int16>(
         low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8],
         low[9], low[10], low[11], low[12], low[13], low[14], low[15], low[15]
     )
     high &+= (low &+ lowShifted) &>> 1
-    
-    // Merge
     for i in 0..<16 {
         buffer[2 * i * stride] = low[i]
         buffer[(2 * i + 1) * stride] = high[i]
@@ -325,224 +275,110 @@ func invLift53SIMD16(_ buffer: UnsafeMutableBufferPointer<Int16>, stride: Int) {
 // MARK: - Specialized 2D DWT
 
 @inline(__always)
-func dwt2dSIMD4(_ block: inout Block2D) -> Subbands {
+func dwt2dSIMD4(_ block: inout BlockView) -> Subbands {
     let size = 8
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            lift53SIMD4(rowBuffer, stride: 1)
-        }
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            lift53SIMD4(colBuffer, stride: width)
-        }
+    let base = block.base
+    let width = block.stride
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        lift53SIMD4(rowBuffer, stride: 1)
     }
-    return splitSubbands(&block, size: size)
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        lift53SIMD4(colBuffer, stride: width)
+    }
+    return makeSubbands(base: base, size: size, stride: width)
 }
 
 @inline(__always)
-func dwt2dSIMD8(_ block: inout Block2D) -> Subbands {
+func dwt2dSIMD8(_ block: inout BlockView) -> Subbands {
     let size = 16
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            lift53SIMD8(rowBuffer, stride: 1)
-        }
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            lift53SIMD8(colBuffer, stride: width)
-        }
+    let base = block.base
+    let width = block.stride
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        lift53SIMD8(rowBuffer, stride: 1)
     }
-    return splitSubbands(&block, size: size)
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        lift53SIMD8(colBuffer, stride: width)
+    }
+    return makeSubbands(base: base, size: size, stride: width)
 }
 
 @inline(__always)
-func dwt2dSIMD16(_ block: inout Block2D) -> Subbands {
+func dwt2dSIMD16(_ block: inout BlockView) -> Subbands {
     let size = 32
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            lift53SIMD16(rowBuffer, stride: 1)
-        }
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            lift53SIMD16(colBuffer, stride: width)
-        }
+    let base = block.base
+    let width = block.stride
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        lift53SIMD16(rowBuffer, stride: 1)
     }
-    return splitSubbands(&block, size: size)
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        lift53SIMD16(colBuffer, stride: width)
+    }
+    return makeSubbands(base: base, size: size, stride: width)
 }
 
 @inline(__always)
-func invDwt2dSIMD4(_ sub: Subbands) -> Block2D {
+func invDwt2dSIMD4(_ block: inout BlockView) {
     let size = 8
-    var block = mergeSubbands(sub, size: size)
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            invLift53SIMD4(colBuffer, stride: width)
-        }
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            invLift53SIMD4(rowBuffer, stride: 1)
-        }
+    let base = block.base
+    let width = block.stride
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        invLift53SIMD4(colBuffer, stride: width)
     }
-    return block
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        invLift53SIMD4(rowBuffer, stride: 1)
+    }
 }
 
 @inline(__always)
-func invDwt2dSIMD8(_ sub: Subbands) -> Block2D {
+func invDwt2dSIMD8(_ block: inout BlockView) {
     let size = 16
-    var block = mergeSubbands(sub, size: size)
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            invLift53SIMD8(colBuffer, stride: width)
-        }
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            invLift53SIMD8(rowBuffer, stride: 1)
-        }
+    let base = block.base
+    let width = block.stride
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        invLift53SIMD8(colBuffer, stride: width)
     }
-    return block
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        invLift53SIMD8(rowBuffer, stride: 1)
+    }
 }
 
 @inline(__always)
-func invDwt2dSIMD16(_ sub: Subbands) -> Block2D {
+func invDwt2dSIMD16(_ block: inout BlockView) {
     let size = 32
-    var block = mergeSubbands(sub, size: size)
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            invLift53SIMD16(colBuffer, stride: width)
-        }
-        for y in 0..<size {
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
-            invLift53SIMD16(rowBuffer, stride: 1)
-        }
+    let base = block.base
+    let width = block.stride
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        invLift53SIMD16(colBuffer, stride: width)
     }
-    return block
+    for y in 0..<size {
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + (y * width), count: size)
+        invLift53SIMD16(rowBuffer, stride: 1)
+    }
 }
 
 #endif
 
-@inline(__always)
-private func splitSubbands(_ block: inout Block2D, size: Int) -> Subbands {
-    let half = size / 2
-    var sub = Subbands(
-        ll: Block2D(width: half, height: half),
-        hl: Block2D(width: half, height: half),
-        lh: Block2D(width: half, height: half),
-        hh: Block2D(width: half, height: half),
-        size: half
-    )
-    
-    block.data.withUnsafeBufferPointer { blockPtr in
-        guard let bBase = blockPtr.baseAddress else { return }
-        
-        sub.ll.data.withUnsafeMutableBufferPointer { llPtr in
-            sub.hl.data.withUnsafeMutableBufferPointer { hlPtr in
-                sub.lh.data.withUnsafeMutableBufferPointer { lhPtr in
-                    sub.hh.data.withUnsafeMutableBufferPointer { hhPtr in
-                        guard let llBase = llPtr.baseAddress,
-                              let hlBase = hlPtr.baseAddress,
-                              let lhBase = lhPtr.baseAddress,
-                              let hhBase = hhPtr.baseAddress else { return }
-                        
-                        let bWidth = block.width
-                        let sWidth = half
-                        
-                        for y in 0..<half {
-                            let bRowOff = (y * bWidth)
-                            let sRowOff = (y * sWidth)
-                            
-                            // Top half (LL and HL)
-                            for x in 0..<half {
-                                llBase[sRowOff + x] = bBase[bRowOff + x]
-                                hlBase[sRowOff + x] = bBase[bRowOff + x + half]
-                            }
-                            
-                            // Bottom half (LH and HH)
-                            let bLowRowOff = ((y + half) * bWidth)
-                            for x in 0..<half {
-                                lhBase[sRowOff + x] = bBase[bLowRowOff + x]
-                                hhBase[sRowOff + x] = bBase[bLowRowOff + x + half]
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return sub
-}
-
-@inline(__always)
-private func mergeSubbands(_ sub: Subbands, size: Int) -> Block2D {
-    let half = sub.size
-    var block = Block2D(width: size, height: size)
-    
-    block.data.withUnsafeMutableBufferPointer { blockPtr in
-        guard let bBase = blockPtr.baseAddress else { return }
-        
-        sub.ll.data.withUnsafeBufferPointer { llPtr in
-            sub.hl.data.withUnsafeBufferPointer { hlPtr in
-                sub.lh.data.withUnsafeBufferPointer { lhPtr in
-                    sub.hh.data.withUnsafeBufferPointer { hhPtr in
-                        guard let llBase = llPtr.baseAddress,
-                              let hlBase = hlPtr.baseAddress,
-                              let lhBase = lhPtr.baseAddress,
-                              let hhBase = hhPtr.baseAddress else { return }
-                        
-                        let bWidth = block.width
-                        let sWidth = half
-                        
-                        for y in 0..<half {
-                            let bRowOff = (y * bWidth)
-                            let sRowOff = (y * sWidth)
-                            
-                            // Top half (LL and HL)
-                            for x in 0..<half {
-                                bBase[bRowOff + x] = llBase[sRowOff + x]
-                                bBase[bRowOff + x + half] = hlBase[sRowOff + x]
-                            }
-                            
-                            // Bottom half (LH and HH)
-                            let bLowRowOff = ((y + half) * bWidth)
-                            for x in 0..<half {
-                                bBase[bLowRowOff + x] = lhBase[sRowOff + x]
-                                bBase[bLowRowOff + x + half] = hhBase[sRowOff + x]
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return block
-}
-
 // MARK: - 2D DWT
 
 @inline(__always)
-public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
+public func dwt2d(_ block: inout BlockView, size: Int) -> Subbands {
     #if arch(arm64) || arch(x86_64) || arch(wasm32)
     switch size {
     case 8:
@@ -559,69 +395,51 @@ public func dwt2d(_ block: inout Block2D, size: Int) -> Subbands {
     #endif
 }
 
-internal func dwt2dScalar(_ block: inout Block2D, size: Int) -> Subbands {
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        
-        // Horizontal (stride = 1)
-        for y in 0..<size {
-            let offset = (y * block.width)
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
-            lift53(rowBuffer, count: size, stride: 1)
-        }
-        
-        // Vertical (stride = width)
-        let width = block.width
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            lift53(colBuffer, count: size, stride: width)
-        }
+internal func dwt2dScalar(_ block: inout BlockView, size: Int) -> Subbands {
+    let base = block.base
+    let width = block.stride
+    for y in 0..<size {
+        let offset = (y * width)
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
+        lift53(rowBuffer, count: size, stride: 1)
     }
-    
-    return splitSubbands(&block, size: size)
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        lift53(colBuffer, count: size, stride: width)
+    }
+    return makeSubbands(base: base, size: size, stride: width)
 }
 
 @inline(__always)
-public func invDwt2d(_ sub: Subbands) -> Block2D {
+public func invDwt2d(_ block: inout BlockView, size: Int) {
     #if arch(arm64) || arch(x86_64) || arch(wasm32)
-    switch sub.size {
-    case 4:
-        return invDwt2dSIMD4(sub)
+    switch size {
     case 8:
-        return invDwt2dSIMD8(sub)
+        invDwt2dSIMD4(&block)
     case 16:
-        return invDwt2dSIMD16(sub)
+        invDwt2dSIMD8(&block)
+    case 32:
+        invDwt2dSIMD16(&block)
     default:
-        return invDwt2dScalar(sub)
+        invDwt2dScalar(&block, size: size)
     }
     #else
-    return invDwt2dScalar(sub)
+    invDwt2dScalar(&block, size: size)
     #endif
 }
 
-internal func invDwt2dScalar(_ sub: Subbands) -> Block2D {
-    let size = (sub.size * 2)
-    var block = mergeSubbands(sub, size: size)
-    
-    block.data.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        let width = block.width
-        
-        // Vertical (stride = width)
-        let colCount = ((size - 1) * width) + 1
-        for x in 0..<size {
-            let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
-            invLift53(colBuffer, count: size, stride: width)
-        }
-        
-        // Horizontal (stride = 1)
-        for y in 0..<size {
-            let offset = (y * width)
-            let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
-            invLift53(rowBuffer, count: size, stride: 1)
-        }
+internal func invDwt2dScalar(_ block: inout BlockView, size: Int) {
+    let base = block.base
+    let width = block.stride
+    let colCount = ((size - 1) * width) + 1
+    for x in 0..<size {
+        let colBuffer = UnsafeMutableBufferPointer(start: base + x, count: colCount)
+        invLift53(colBuffer, count: size, stride: width)
     }
-    
-    return block
+    for y in 0..<size {
+        let offset = (y * width)
+        let rowBuffer = UnsafeMutableBufferPointer(start: base + offset, count: size)
+        invLift53(rowBuffer, count: size, stride: 1)
+    }
 }

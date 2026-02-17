@@ -10,72 +10,96 @@ func toInt16(_ u: UInt16) -> Int16 {
 }
 
 @inline(__always)
-func blockDecode(rr: inout RiceReader, size: Int) throws -> Block2D {
-    var block = Block2D(width: size, height: size)
-    try block.data.withUnsafeMutableBufferPointer { buf in
-        guard var p = buf.baseAddress else { return }
-        for _ in 0..<(size * size) {
+func blockDecode(rr: inout RiceReader, block: inout BlockView, size: Int) throws {
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
             let v = try rr.read(k: k)
-            p.pointee = Int16(bitPattern: v)
-            p += 1
+            ptr[x] = Int16(bitPattern: v)
         }
     }
-    return block
 }
 
 @inline(__always)
-func blockDecodeDPCM(rr: inout RiceReader, size: Int) throws -> Block2D {
-    var block = Block2D(width: size, height: size)
+func blockDecodeDPCM(rr: inout RiceReader, block: inout BlockView, size: Int) throws {
     var prevVal: Int16 = 0
-
-    try block.data.withUnsafeMutableBufferPointer { buf in
-        guard var p = buf.baseAddress else { return }
-        for _ in 0..<(size * size) {
+    for y in 0..<size {
+        let ptr = block.rowPointer(y: y)
+        for x in 0..<size {
             let v = try rr.read(k: k)
             let diff = toInt16(v)
-
             let val = diff + prevVal
-            p.pointee = val
-            p += 1
-
+            ptr[x] = val
             prevVal = val
         }
     }
-    return block
 }
 
 @inline(__always)
 func invertLayer(br: BitReader, ll: Block2D, size: Int, qt: QuantizationTable) throws -> Block2D {
-    var rr = RiceReader(br: br)
+    var ll = ll
+    var block = Block2D(width: size, height: size)
+    let half = size / 2
     
-    var hl = try blockDecode(rr: &rr, size: (size / 2))
-    var lh = try blockDecode(rr: &rr, size: (size / 2))
-    var hh = try blockDecode(rr: &rr, size: (size / 2))
+    // Copy LL to top-left
+    ll.withView { srcView in
+        block.withView { destView in
+            for y in 0..<half {
+                let srcPtr = srcView.rowPointer(y: y)
+                let destPtr = destView.rowPointer(y: y)
+                memcpy(destPtr, srcPtr, half * MemoryLayout<Int16>.size)
+            }
+        }
+    }
     
-    dequantizeMidSignedMapping(&hl, qt: qt)
-    dequantizeMidSignedMapping(&lh, qt: qt)
-    dequantizeHighSignedMapping(&hh, qt: qt)
+    try block.withView { view in
+        let base = view.base
+        var hlView = BlockView(base: base.advanced(by: half), width: half, height: half, stride: size)
+        var lhView = BlockView(base: base.advanced(by: half * size), width: half, height: half, stride: size)
+        var hhView = BlockView(base: base.advanced(by: half * size + half), width: half, height: half, stride: size)
+        
+        var rr = RiceReader(br: br)
+        try blockDecode(rr: &rr, block: &hlView, size: half)
+        try blockDecode(rr: &rr, block: &lhView, size: half)
+        try blockDecode(rr: &rr, block: &hhView, size: half)
+        
+        dequantizeMidSignedMapping(&hlView, qt: qt)
+        dequantizeMidSignedMapping(&lhView, qt: qt)
+        dequantizeHighSignedMapping(&hhView, qt: qt)
+        
+        invDwt2d(&view, size: size)
+    }
     
-    let sub = Subbands(ll: ll, hl: hl, lh: lh, hh: hh, size: (size / 2))
-    return invDwt2d(sub)
+    return block
 }
 
 @inline(__always)
 func invertBase(br: BitReader, size: Int, qt: QuantizationTable) throws -> Block2D {
-    var rr = RiceReader(br: br)
+    var block = Block2D(width: size, height: size)
+    let half = size / 2
     
-    var ll = try blockDecodeDPCM(rr: &rr, size: (size / 2))
-    var hl = try blockDecode(rr: &rr, size: (size / 2))
-    var lh = try blockDecode(rr: &rr, size: (size / 2))
-    var hh = try blockDecode(rr: &rr, size: (size / 2))
+    try block.withView { view in
+        let base = view.base
+        var llView = BlockView(base: base, width: half, height: half, stride: size)
+        var hlView = BlockView(base: base.advanced(by: half), width: half, height: half, stride: size)
+        var lhView = BlockView(base: base.advanced(by: half * size), width: half, height: half, stride: size)
+        var hhView = BlockView(base: base.advanced(by: half * size + half), width: half, height: half, stride: size)
+        
+        var rr = RiceReader(br: br)
+        try blockDecodeDPCM(rr: &rr, block: &llView, size: half)
+        try blockDecode(rr: &rr, block: &hlView, size: half)
+        try blockDecode(rr: &rr, block: &lhView, size: half)
+        try blockDecode(rr: &rr, block: &hhView, size: half)
+        
+        dequantizeLow(&llView, qt: qt)
+        dequantizeMidSignedMapping(&hlView, qt: qt)
+        dequantizeMidSignedMapping(&lhView, qt: qt)
+        dequantizeHighSignedMapping(&hhView, qt: qt)
+        
+        invDwt2d(&view, size: size)
+    }
     
-    dequantizeLow(&ll, qt: qt)
-    dequantizeMidSignedMapping(&hl, qt: qt)
-    dequantizeMidSignedMapping(&lh, qt: qt)
-    dequantizeHighSignedMapping(&hh, qt: qt)
-    
-    let sub = Subbands(ll: ll, hl: hl, lh: lh, hh: hh, size: (size / 2))
-    return invDwt2d(sub)
+    return block
 }
 
 public typealias GetLLFunc = (_ x: Int, _ y: Int, _ size: Int) -> Block2D
@@ -171,9 +195,11 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateY(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateY(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
@@ -204,9 +230,11 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateCb(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateCb(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
@@ -237,9 +265,11 @@ func decodeLayer(r: Data, prev: Image16, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateCr(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateCr(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
@@ -325,9 +355,11 @@ func decodeBase(r: Data, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateY(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateY(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
@@ -358,9 +390,11 @@ func decodeBase(r: Data, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateCb(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateCb(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
@@ -391,9 +425,11 @@ func decodeBase(r: Data, size: Int) async throws -> Image16 {
         }
         results.sort { $0.0 < $1.0 }
         
-        for (_, rowBlocks) in results {
-            for (ll, w, h) in rowBlocks {
-                sub.updateCr(data: ll, startX: w, startY: h, size: size)
+        for i in results.indices {
+            for j in results[i].1.indices {
+                let w = results[i].1[j].1
+                let h = results[i].1[j].2
+                sub.updateCr(data: &results[i].1[j].0, startX: w, startY: h, size: size)
             }
         }
     }
