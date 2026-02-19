@@ -1,4 +1,4 @@
-import Foundation
+// MARK: - DWT
 
 // MARK: - DWT Structures
 

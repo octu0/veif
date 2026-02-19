@@ -1,3 +1,4 @@
+#if !os(wasm32)
 #if canImport(CoreGraphics) && canImport(ImageIO)
 import Foundation
 import CoreGraphics
@@ -128,4 +129,5 @@ public func saveImage(img: YCbCrImage, url: URL) throws {
     }
 }
 
+#endif
 #endif

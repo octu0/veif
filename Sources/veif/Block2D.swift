@@ -30,7 +30,7 @@ public struct BlockView {
         row.withUnsafeBufferPointer { src in
             guard let srcBase = src.baseAddress else { return }
             // Use width, not row.count, assuming row fits
-            memcpy(ptr, srcBase, width * MemoryLayout<Int16>.size)
+            ptr.update(from: srcBase, count: width)
         }
     }
 }

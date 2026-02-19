@@ -1,4 +1,4 @@
-import Foundation
+// MARK: - Image
 
 // MARK: - Utilities
 
