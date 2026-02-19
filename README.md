@@ -163,6 +163,10 @@ let (encodedLayer0, encodedLayer1, encodedLayer2) = try await encodeImageLayers(
 let decodedLayers = try await decodeImageLayers(data: encodedLayer0, encodedLayer1, encodedLayer2)
 ```
 
+# Online DEMO
+
+[veif wasm demo](https://octu0.github.io/veif-wasm-demo/)
+
 ## Internals
 
 - **Color Space**: YCbCr 4:2:0
