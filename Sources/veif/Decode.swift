@@ -506,6 +506,32 @@ public func decodeLayers(layers: [UInt8]...) async throws -> YCbCrImage {
     return current.toYCbCr()
 }
 
+public func decodeLayers(r: [UInt8], maxLayer: Int) async throws -> YCbCrImage {
+    var offset = 0
+    
+    // Layer 0
+    let len0 = try readUInt32BEFromBytes(r, offset: &offset)
+    let layer0Data = Array(r[offset..<(offset + Int(len0))])
+    offset += Int(len0)
+    var current = try await decodeBase(r: layer0Data, layer: 0, size: 8)
+    
+    if maxLayer >= 1 {
+        let len1 = try readUInt32BEFromBytes(r, offset: &offset)
+        let layer1Data = Array(r[offset..<(offset + Int(len1))])
+        offset += Int(len1)
+        current = try await decodeLayer(r: layer1Data, layer: 1, prev: current, size: 16)
+    }
+    
+    if maxLayer >= 2 {
+        let len2 = try readUInt32BEFromBytes(r, offset: &offset)
+        let layer2Data = Array(r[offset..<(offset + Int(len2))])
+        offset += Int(len2)
+        current = try await decodeLayer(r: layer2Data, layer: 2, prev: current, size: 32)
+    }
+    
+    return current.toYCbCr()
+}
+
 public func decodeOne(r: [UInt8]) async throws -> YCbCrImage {
     var offset = 0
     

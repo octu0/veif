@@ -201,9 +201,32 @@
                 </div>
 
                 <div class="image-container">
-                    <label>veif (Decoded)</label>
-                    <canvas id="decodedCanvas"></canvas>
-                    <div class="stats" id="veifStats"></div>
+                    <label>Layer 0 (Small)</label>
+                    <canvas id="canvasL0"></canvas>
+                </div>
+
+                <div class="image-container">
+                    <label>Layer 1 (Medium)</label>
+                    <canvas id="canvasL1"></canvas>
+                </div>
+
+                <div class="image-container">
+                    <label>Layer 2 (Full)</label>
+                    <canvas id="canvasL2"></canvas>
+                </div>
+            </div>
+            <div class="stats" id="veifStats" style="text-align: center; margin-top: 20px;"></div>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <div style="text-align: center;">
+                <h3>Progressive Display Demo</h3>
+                <p style="font-size: 0.9rem; color: #666;">Simulates loading layers sequentially (0 -> 1 -> 2)</p>
+                <button id="progressiveBtn" class="btn" disabled>Start Progressive Demo</button>
+                <div class="image-container" style="margin-top: 20px;">
+                    <canvas id="progressiveCanvas"
+                        style="width: 100%; max-width: 600px; height: auto; image-rendering: pixelated;"></canvas>
+                    <div class="stats" id="progressiveStats"></div>
                 </div>
             </div>
         </div>
@@ -219,8 +242,11 @@
         const { instance, swift, exports } = await instantiate(options);
 
         let veif = {
-            encode: exports.encodeVeif,
-            decode: exports.decodeVeif
+            encodeOne: exports.encodeOne,
+            decodeOne: exports.decodeOne,
+            encode: exports.encode,
+            decode: exports.decode,
+            decodeUpTo: exports.decodeUpTo
         };
 
         if (veif.encode && veif.decode) {
@@ -238,9 +264,12 @@
         const bitrateInput = document.getElementById('bitrate');
         const resultCard = document.getElementById('resultCard');
         const originalImg = document.getElementById('originalImg');
-        const decodedCanvas = document.getElementById('decodedCanvas');
         const originalStats = document.getElementById('originalStats');
         const veifStats = document.getElementById('veifStats');
+
+        const canvasL0 = document.getElementById('canvasL0');
+        const canvasL1 = document.getElementById('canvasL1');
+        const canvasL2 = document.getElementById('canvasL2');
 
         let currentFile = null;
 
@@ -254,8 +283,10 @@
                     originalStats.textContent = `Size: ${(file.size / 1024).toFixed(2)} KB`;
                     resultCard.style.display = 'block';
                     // Clear previous result
-                    const ctx = decodedCanvas.getContext('2d');
-                    ctx.clearRect(0, 0, decodedCanvas.width, decodedCanvas.height);
+                    [canvasL0, canvasL1, canvasL2].forEach(c => {
+                        const ctx = c.getContext('2d');
+                        ctx.clearRect(0, 0, c.width, c.height);
+                    });
                     veifStats.textContent = "";
                     encodeBtn.disabled = false;
                 };
@@ -273,7 +304,6 @@
             try {
                 // Read file info
                 const arrayBuffer = await currentFile.arrayBuffer();
-                const uint8Array = new Uint8Array(arrayBuffer);
 
                 // Get image dimensions from img element
                 const width = originalImg.naturalWidth;
@@ -282,7 +312,6 @@
                 const startTime = performance.now();
 
                 // 1. Convert PNG to Raw RGBA (using Canvas for simplicity in demo)
-                // Note: In a real app, you might want to do this in WASM too, but for now we rely on Browser Canvas
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = width;
                 tempCanvas.height = height;
@@ -305,16 +334,22 @@
 
                 console.log("Decoded:", decodedResult);
 
-                // 4. Render Result
-                decodedCanvas.width = decodedResult.width;
-                decodedCanvas.height = decodedResult.height;
-                const resultCtx = decodedCanvas.getContext('2d');
-                const resultImageData = new ImageData(
-                    new Uint8ClampedArray(decodedResult.data),
-                    decodedResult.width,
-                    decodedResult.height
-                );
-                resultCtx.putImageData(resultImageData, 0, 0);
+                // 4. Render Result (3 Layers)
+                const renderLayer = (canvas, layerData) => {
+                    canvas.width = layerData.width;
+                    canvas.height = layerData.height;
+                    const ctx = canvas.getContext('2d');
+                    const imgData = new ImageData(
+                        new Uint8ClampedArray(layerData.data),
+                        layerData.width,
+                        layerData.height
+                    );
+                    ctx.putImageData(imgData, 0, 0);
+                };
+
+                renderLayer(canvasL0, decodedResult.layer0);
+                renderLayer(canvasL1, decodedResult.layer1);
+                renderLayer(canvasL2, decodedResult.layer2);
 
                 // Update Stats
                 const kbSize = (encodedData.length / 1024).toFixed(2);
@@ -323,13 +358,62 @@
                 veifStats.innerHTML = `
                 <strong>${kbSize} KB</strong> (${ratio}%)<br>
                 Enc: ${encodeTime.toFixed(1)}ms / Dec: ${decodeTime.toFixed(1)}ms
-            `;
+                `;
+
+                progressiveCanvas.style.maxWidth = canvasL2.width + "px";
+                progressiveCanvas.style.maxHeight = canvasL2.height + "px";
+
+                // Enable Progressive Demo Button
+                progressiveBtn.disabled = false;
+                lastEncodedData = encodedData; // Store for progressive demo
 
             } catch (e) {
                 console.error(e);
                 alert("Error processing image: " + e);
             } finally {
                 document.getElementById('loading').style.display = 'none';
+            }
+        });
+
+        // Progressive Demo Logic
+        let lastEncodedData = null;
+        const progressiveBtn = document.getElementById('progressiveBtn');
+        const progressiveCanvas = document.getElementById('progressiveCanvas');
+        const progressiveStats = document.getElementById('progressiveStats');
+
+        progressiveBtn.addEventListener('click', async () => {
+            if (!lastEncodedData || !veif) return;
+
+            progressiveBtn.disabled = true;
+            progressiveStats.textContent = "Starting progressive decode...";
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+            try {
+                for (let layer = 0; layer <= 2; layer++) {
+                    await sleep(1000); // 1 sec delay
+                    progressiveStats.textContent = `Decoding up to Layer ${layer}...`;
+
+                    const result = await veif.decodeUpTo(lastEncodedData, layer);
+
+                    // Render to progressive canvas (scale up using CSS)
+                    progressiveCanvas.width = result.width;
+                    progressiveCanvas.height = result.height;
+                    const ctx = progressiveCanvas.getContext('2d');
+                    const imgData = new ImageData(
+                        new Uint8ClampedArray(result.data),
+                        result.width,
+                        result.height
+                    );
+                    ctx.putImageData(imgData, 0, 0);
+
+                    progressiveStats.textContent = `Displayed Layer ${layer} (${result.width}x${result.height})`;
+                }
+                progressiveStats.textContent += " - Done!";
+            } catch (e) {
+                console.error(e);
+                progressiveStats.textContent = "Error: " + e;
+            } finally {
+                progressiveBtn.disabled = false;
             }
         });
     </script>
