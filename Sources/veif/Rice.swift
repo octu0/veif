@@ -1,16 +1,16 @@
-import Foundation
+// MARK: - Rice Coding (Foundation-free)
 
 // MARK: - BitWriter
 
 public struct BitWriter {
-    public let data: NSMutableData
+    public var data: [UInt8]
     private var cache: UInt8
     private var bits: UInt8
     private var buffer: [UInt8]
     private let bufferSize = 4096
     
-    public init(data: NSMutableData) {
-        self.data = data
+    public init() {
+        self.data = []
         self.cache = 0
         self.bits = 0
         self.buffer = []
@@ -26,9 +26,7 @@ public struct BitWriter {
         if bits == 8 {
             buffer.append(cache)
             if buffer.count >= bufferSize {
-                buffer.withUnsafeBufferPointer { ptr in
-                    data.append(ptr.baseAddress!, length: ptr.count)
-                }
+                data.append(contentsOf: buffer)
                 buffer.removeAll(keepingCapacity: true)
             }
             bits = 0
@@ -51,10 +49,8 @@ public struct BitWriter {
             bits = 0
             cache = 0
         }
-        if !buffer.isEmpty {
-            buffer.withUnsafeBufferPointer { ptr in
-                data.append(ptr.baseAddress!, length: ptr.count)
-            }
+        if buffer.isEmpty != true {
+            data.append(contentsOf: buffer)
             buffer.removeAll(keepingCapacity: true)
         }
     }
@@ -126,18 +122,31 @@ public struct RiceWriter {
         }
         bw.flush()
     }
+    
+    @inline(__always)
+    internal mutating func extractWriter() -> BitWriter {
+        return bw
+    }
+    
+    @inline(__always)
+    public static func withWriter(_ bw: inout BitWriter, body: (inout RiceWriter) throws -> Void) rethrows {
+        var rw = RiceWriter(bw: bw)
+        try body(&rw)
+        rw.flush()
+        bw = rw.extractWriter()
+    }
 }
 
 // MARK: - BitReader
 
 public struct BitReader {
-    private let data: Data
+    private let data: [UInt8]
     private var offset: Int
     private var cache: UInt8
     private var bits: UInt8
     private let dataCount: Int
     
-    public init(data: Data) {
+    public init(data: [UInt8]) {
         self.data = data
         self.offset = 0
         self.cache = 0
@@ -149,7 +158,7 @@ public struct BitReader {
     public mutating func readBit() throws -> UInt8 {
         if bits == 0 {
             if dataCount <= offset {
-                throw NSError(domain: "BitReaderErr", code: 1, userInfo: [NSLocalizedDescriptionKey: "EOF"])
+                throw DecodeError.eof
             }
             cache = data[offset]
             offset += 1

@@ -1,5 +1,3 @@
-import Foundation
-
 // MARK: - BlockView
 
 public struct BlockView {

@@ -141,13 +141,13 @@ func runCustomCodecOneComparison(bitrate: Int, originImg: YCbCrImage) async {
     let iterations = 1000
     var totalDuration: Double = 0
     
-    guard let out = try? await encodeOne(img: originImg, maxbitrate: targetBits) else {
+    guard let out = try? await encodeImageOne(img: originImg, maxbitrate: targetBits) else {
         fatalError("Failed to encode")
     }
 
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await encodeOne(img: originImg, maxbitrate: targetBits)
+        _ = try? await encodeImageOne(img: originImg, maxbitrate: targetBits)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
     let encDuration = totalDuration / Double(iterations)
@@ -156,12 +156,12 @@ func runCustomCodecOneComparison(bitrate: Int, originImg: YCbCrImage) async {
     var totalDecDuration: Double = 0
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await decodeOne(r: out)
+        _ = try? await decodeImageOne(r: out)
         totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
     let decDuration = totalDecDuration / Double(iterations)
 
-    guard let decLarge = try? await decodeOne(r: out) else {
+    guard let decLarge = try? await decodeImageOne(r: out) else {
         fatalError("Failed to decode")
     }
 
@@ -176,13 +176,13 @@ func runCustomCodecLayersComparison(bitrate: Int, originImg: YCbCrImage, refMid:
     let iterations = 1000
     var totalDuration: Double = 0
     
-    guard let out = try? await encode(img: originImg, maxbitrate: targetBits) else {
+    guard let out = try? await encodeImage(img: originImg, maxbitrate: targetBits) else {
         fatalError("Failed to encode")
     }
 
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await encode(img: originImg, maxbitrate: targetBits)
+        _ = try? await encodeImage(img: originImg, maxbitrate: targetBits)
         totalDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
     let encDuration = totalDuration / Double(iterations)
@@ -191,12 +191,12 @@ func runCustomCodecLayersComparison(bitrate: Int, originImg: YCbCrImage, refMid:
     var totalDecDuration: Double = 0
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await decode(r: out)
+        _ = try? await decodeImage(r: out)
         totalDecDuration += (CFAbsoluteTimeGetCurrent() - start) * 1000.0
     }
     let decDuration = totalDecDuration / Double(iterations)
 
-    guard let (decSmall, decMid, decLarge) = try? await decode(r: out) else {
+    guard let (decSmall, decMid, decLarge) = try? await decodeImage(r: out) else {
         fatalError("Failed to decode")
     }
 

@@ -116,36 +116,51 @@ While next-generation formats like AVIF or JPEG XL focus on achieving the absolu
 
 # Usage
 
+The core API is Foundation-free and uses `[UInt8]` for all platforms (including WASM).
+On macOS, convenience wrappers that accept/return `Data` are also available.
+
+### Core API (`[UInt8]`, all platforms)
+
 ```swift
 import veif
 
-// 0. Convert YCbCr
-let data = try Data(contentsOf: URL(fileURLWithPath: "src.png"))
-let ycbcr = try pngToYCbCr(data: data)
+// --- Default (Progressive, 3-layers) ---
 
-// --- Default ---
-
-// 1. Encode (Progressive, default 3-layers)
-let encoded = try await encode(img: ycbcr, maxbitrate: 200 * 1000)
-
-// 2. Decode (Extract all layers)
+let encoded: [UInt8] = try await encode(img: ycbcr, maxbitrate: 200 * 1000)
 let (layer0, layer1, layer2) = try await decode(r: encoded)
 
-// --- Speed Mode ---
+// --- Speed Mode (Single layer) ---
 
-// Encode as single layer
-let encodedOne = try await encodeOne(img: ycbcr, maxbitrate: 200 * 1000)
-
-// Decode single layer
+let encodedOne: [UInt8] = try await encodeOne(img: ycbcr, maxbitrate: 200 * 1000)
 let decodedOne = try await decodeOne(r: encodedOne)
 
 // --- Individual Layer Handling ---
 
-// Encode into separate layer data
-let (e0, e1, e2) = try await encodeLayers(img: ycbcr, maxbitrate: 200 * 1000)
+let (encodedLayer0, encodedLayer1, encodedLayer2) = try await encodeLayers(img: ycbcr, maxbitrate: 200 * 1000)
+let decodedLayers = try await decodeLayers(layers: encodedLayer0, encodedLayer1, encodedLayer2)
+```
 
-// Decode by stacking layers
-let decodedLayers = try await decodeLayers(data: e0, e1, e2)
+### macOS Convenience API (`Data`)
+
+```swift
+import veif
+
+let data = try Data(contentsOf: URL(fileURLWithPath: "src.png"))
+let ycbcr = try pngToYCbCr(data: data)
+
+// Encode → Data
+let encoded: Data = try await encodeImage(img: ycbcr, maxbitrate: 200 * 1000)
+
+// Decode → YCbCrImage
+let (layer0, layer1, layer2) = try await decodeImage(r: encoded)
+
+// Speed Mode
+let encodedOne: Data = try await encodeImageOne(img: ycbcr, maxbitrate: 200 * 1000)
+let decodedOne = try await decodeImageOne(r: encodedOne)
+
+// Individual Layers
+let (encodedLayer0, encodedLayer1, encodedLayer2) = try await encodeImageLayers(img: ycbcr, maxbitrate: 200 * 1000)
+let decodedLayers = try await decodeImageLayers(data: encodedLayer0, encodedLayer1, encodedLayer2)
 ```
 
 ## Internals

@@ -19,6 +19,26 @@
             "target": "example",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release example"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Debug wasm",
+            "target": "wasm",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug wasm"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Release wasm",
+            "target": "wasm",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release wasm"
         }
     ]
 }

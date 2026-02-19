@@ -1,64 +1,69 @@
 
-import XCTest
+import Testing
 @testable import veif
 
-final class HeaderTests: XCTestCase {
+@Suite("Header Validation Tests")
+struct HeaderTests {
     
-    func testDecodeBaseInvalidHeader() async throws {
+    @Test("decodeBase: invalid header")
+    func testDecodeBaseInvalidHeader() async {
         // 'VEIF' incorrect
-        let data = Data([0x00, 0x00, 0x00, 0x00, 0x00]) 
+        let data: [UInt8] = [0x00, 0x00, 0x00, 0x00, 0x00]
         
         do {
-            _ = try await decodeBase(r: data, size: 8, layer: 0)
-            XCTFail("Should have thrown error")
+            _ = try await decodeBase(r: data, layer: 0, size: 8)
+            Issue.record("Should have thrown error")
+        } catch let error as DecodeError {
+            #expect(error == .invalidHeader)
         } catch {
-            let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "DecodeError")
-            XCTAssertEqual(nsError.code, 4) // Invalid Header
+            Issue.record("Unexpected error type: \(error)")
         }
     }
     
-    func testDecodeBaseInvalidLayer() async throws {
+    @Test("decodeBase: invalid layer number")
+    func testDecodeBaseInvalidLayer() async {
         // 'VEIF' correct, layer incorrect (expect 0, got 1)
-        let data = Data([0x56, 0x45, 0x49, 0x46, 0x01])
+        let data: [UInt8] = [0x56, 0x45, 0x49, 0x46, 0x01]
         
         do {
-            _ = try await decodeBase(r: data, size: 8, layer: 0)
-            XCTFail("Should have thrown error")
+            _ = try await decodeBase(r: data, layer: 0, size: 8)
+            Issue.record("Should have thrown error")
+        } catch let error as DecodeError {
+            #expect(error == .invalidLayerNumber)
         } catch {
-            let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "DecodeError")
-            XCTAssertEqual(nsError.code, 5) // Invalid Layer Number
+            Issue.record("Unexpected error type: \(error)")
         }
     }
 
-    func testDecodeLayerInvalidHeader() async throws {
+    @Test("decodeLayer: invalid header")
+    func testDecodeLayerInvalidHeader() async {
         // 'VEIF' incorrect
-        let data = Data([0x00, 0x00, 0x00, 0x00, 0x01])
+        let data: [UInt8] = [0x00, 0x00, 0x00, 0x00, 0x01]
         let dummyPrev = Image16(width: 8, height: 8)
         
         do {
-            _ = try await decodeLayer(r: data, prev: dummyPrev, size: 16, layer: 1)
-            XCTFail("Should have thrown error")
+            _ = try await decodeLayer(r: data, layer: 1, prev: dummyPrev, size: 16)
+            Issue.record("Should have thrown error")
+        } catch let error as DecodeError {
+            #expect(error == .invalidHeader)
         } catch {
-            let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "DecodeError")
-            XCTAssertEqual(nsError.code, 4) // Invalid Header
+            Issue.record("Unexpected error type: \(error)")
         }
     }
 
-    func testDecodeLayerInvalidLayer() async throws {
+    @Test("decodeLayer: invalid layer number")
+    func testDecodeLayerInvalidLayer() async {
         // 'VEIF' correct, layer incorrect (expect 1, got 2)
-        let data = Data([0x56, 0x45, 0x49, 0x46, 0x02])
+        let data: [UInt8] = [0x56, 0x45, 0x49, 0x46, 0x02]
         let dummyPrev = Image16(width: 8, height: 8)
         
         do {
-            _ = try await decodeLayer(r: data, prev: dummyPrev, size: 16, layer: 1)
-            XCTFail("Should have thrown error")
+            _ = try await decodeLayer(r: data, layer: 1, prev: dummyPrev, size: 16)
+            Issue.record("Should have thrown error")
+        } catch let error as DecodeError {
+            #expect(error == .invalidLayerNumber)
         } catch {
-            let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "DecodeError")
-            XCTAssertEqual(nsError.code, 5) // Invalid Layer Number
+            Issue.record("Unexpected error type: \(error)")
         }
     }
 }

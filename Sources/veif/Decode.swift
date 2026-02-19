@@ -1,4 +1,13 @@
-import Foundation
+// MARK: - Decode Error
+
+public enum DecodeError: Error {
+    case eof
+    case insufficientData
+    case invalidBlockData
+    case invalidHeader
+    case invalidLayerNumber
+    case noDataProvided
+}
 
 // MARK: - Decode Logic
 
@@ -47,7 +56,7 @@ func invertLayer(br: BitReader, ll: Block2D, size: Int, qt: QuantizationTable) t
             for y in 0..<half {
                 let srcPtr = srcView.rowPointer(y: y)
                 let destPtr = destView.rowPointer(y: y)
-                memcpy(destPtr, srcPtr, half * MemoryLayout<Int16>.size)
+                destPtr.update(from: srcPtr, count: half)
             }
         }
     }
@@ -117,65 +126,78 @@ func invertBaseFunc(br: BitReader, w: Int, h: Int, size: Int, qt: QuantizationTa
     return planes
 }
 
-func decodeLayer(r: Data, layer: UInt8, prev: Image16, size: Int) async throws -> Image16 {
+// MARK: - Binary Reading Helpers ([UInt8] based)
+
+@inline(__always)
+func readUInt8FromBytes(_ r: [UInt8], offset: inout Int) throws -> UInt8 {
+    guard (offset + 1) <= r.count else { throw DecodeError.insufficientData }
+    let val = r[offset]
+    offset += 1
+    return val
+}
+
+@inline(__always)
+func readUInt16BEFromBytes(_ r: [UInt8], offset: inout Int) throws -> UInt16 {
+    guard (offset + 2) <= r.count else { throw DecodeError.insufficientData }
+    let val = (UInt16(r[offset]) << 8) | UInt16(r[offset + 1])
+    offset += 2
+    return val
+}
+
+@inline(__always)
+func readUInt32BEFromBytes(_ r: [UInt8], offset: inout Int) throws -> UInt32 {
+    guard (offset + 4) <= r.count else { throw DecodeError.insufficientData }
+    let val = (UInt32(r[offset]) << 24) | (UInt32(r[offset + 1]) << 16) | (UInt32(r[offset + 2]) << 8) | UInt32(r[offset + 3])
+    offset += 4
+    return val
+}
+
+@inline(__always)
+func readBlockFromBytes(_ r: [UInt8], offset: inout Int) throws -> [UInt8] {
+    let len = try readUInt16BEFromBytes(r, offset: &offset)
+    let intLen = Int(len)
+    guard (offset + intLen) <= r.count else { throw DecodeError.invalidBlockData }
+    let block = Array(r[offset..<(offset + intLen)])
+    offset += intLen
+    return block
+}
+
+// MARK: - Internal Decode Functions
+
+func decodeLayer(r: [UInt8], layer: UInt8, prev: Image16, size: Int) async throws -> Image16 {
     var offset = 0
     
-    guard (offset + 5) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-    let header = r.subdata(in: offset..<(offset + 5)).withUnsafeBytes { Array($0) }
+    guard (offset + 5) <= r.count else { throw DecodeError.insufficientData }
+    let header = Array(r[offset..<(offset + 5)])
     offset += 5
     
     guard header[0] == 0x56 && header[1] == 0x45 && header[2] == 0x49 && header[3] == 0x46 else { // check 'VEIF'
-         throw NSError(domain: "DecodeError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid Header"])
+         throw DecodeError.invalidHeader
     }
     guard header[4] == layer else { // check layer
-        throw NSError(domain: "DecodeError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid Layer Number"])
+        throw DecodeError.invalidLayerNumber
     }
     
-    @inline(__always)
-    func readUInt8() throws -> UInt8 {
-        guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
-        offset += 1
-        return val
-    }
+    let dx = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    let dy = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    let qt = QuantizationTable(baseStep: Int(try readUInt8FromBytes(r, offset: &offset)))
     
-    @inline(__always)
-    func readUInt16() throws -> UInt16 {
-        guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
-        offset += 2
-        return val
-    }
-    
-    @inline(__always)
-    func readBlock() throws -> Data {
-        let len = try readUInt16()
-        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
-        let data = r.subdata(in: offset..<(offset + Int(len)))
-        offset += Int(len)
-        return data
-    }
-    
-    let dx = Int(try readUInt16())
-    let dy = Int(try readUInt16())
-    let qt = QuantizationTable(baseStep: Int(try readUInt8()))
-    
-    let bufYLen = Int(try readUInt16())
-    var yBufs: [Data] = []
+    let bufYLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var yBufs: [[UInt8]] = []
     for _ in 0..<bufYLen {
-        yBufs.append(try readBlock())
+        yBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
-    let bufCbLen = Int(try readUInt16())
-    var cbBufs: [Data] = []
+    let bufCbLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var cbBufs: [[UInt8]] = []
     for _ in 0..<bufCbLen {
-        cbBufs.append(try readBlock())
+        cbBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
-    let bufCrLen = Int(try readUInt16())
-    var crBufs: [Data] = []
+    let bufCrLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var crBufs: [[UInt8]] = []
     for _ in 0..<bufCrLen {
-        crBufs.append(try readBlock())
+        crBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
     var sub = Image16(width: dx, height: dy)
@@ -288,65 +310,40 @@ func decodeLayer(r: Data, layer: UInt8, prev: Image16, size: Int) async throws -
     return sub
 }
 
-func decodeBase(r: Data, layer: UInt8, size: Int) async throws -> Image16 {
+func decodeBase(r: [UInt8], layer: UInt8, size: Int) async throws -> Image16 {
     var offset = 0
     
-    guard (offset + 5) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-    let header = r.subdata(in: offset..<(offset + 5)).withUnsafeBytes { Array($0) }
+    guard (offset + 5) <= r.count else { throw DecodeError.insufficientData }
+    let header = Array(r[offset..<(offset + 5)])
     offset += 5
     
     guard header[0] == 0x56 && header[1] == 0x45 && header[2] == 0x49 && header[3] == 0x46 else { // check 'VEIF'
-         throw NSError(domain: "DecodeError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid Header"])
+         throw DecodeError.invalidHeader
     }
     guard header[4] == layer else { // check layer
-        throw NSError(domain: "DecodeError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid Layer Number"])
+        throw DecodeError.invalidLayerNumber
     }
     
-    @inline(__always)
-    func readUInt8() throws -> UInt8 {
-        guard (offset + 1) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 1)).withUnsafeBytes { $0.load(as: UInt8.self).bigEndian }
-        offset += 1
-        return val
-    }
+    let dx = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    let dy = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    let qt = QuantizationTable(baseStep: Int(try readUInt8FromBytes(r, offset: &offset)))
     
-    @inline(__always)
-    func readUInt16() throws -> UInt16 {
-        guard (offset + 2) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
-        offset += 2
-        return val
-    }
-    
-    @inline(__always)
-    func readBlock() throws -> Data {
-        let len = try readUInt16()
-        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
-        let data = r.subdata(in: offset..<(offset + Int(len)))
-        offset += Int(len)
-        return data
-    }
-    
-    let dx = Int(try readUInt16())
-    let dy = Int(try readUInt16())
-    let qt = QuantizationTable(baseStep: Int(try readUInt8()))
-    
-    let bufYLen = Int(try readUInt16())
-    var yBufs: [Data] = []
+    let bufYLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var yBufs: [[UInt8]] = []
     for _ in 0..<bufYLen {
-        yBufs.append(try readBlock())
+        yBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
-    let bufCbLen = Int(try readUInt16())
-    var cbBufs: [Data] = []
+    let bufCbLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var cbBufs: [[UInt8]] = []
     for _ in 0..<bufCbLen {
-        cbBufs.append(try readBlock())
+        cbBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
-    let bufCrLen = Int(try readUInt16())
-    var crBufs: [Data] = []
+    let bufCrLen = Int(try readUInt16BEFromBytes(r, offset: &offset))
+    var crBufs: [[UInt8]] = []
     for _ in 0..<bufCrLen {
-        crBufs.append(try readBlock())
+        crBufs.append(try readBlockFromBytes(r, offset: &offset))
     }
     
     var sub = Image16(width: dx, height: dy)
@@ -459,95 +456,62 @@ func decodeBase(r: Data, layer: UInt8, size: Int) async throws -> Image16 {
     return sub
 }
 
-public func decode(r: Data) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage) {
+// MARK: - Public API ([UInt8] based, Foundation-free)
+
+public func decode(r: [UInt8]) async throws -> (YCbCrImage, YCbCrImage, YCbCrImage) {
     var offset = 0
     
-    func readUInt32() throws -> UInt32 {
-        guard (offset + 4) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-        offset += 4
-        return val
-    }
-    
-    func readLayerData() throws -> Data {
-        let len = try readUInt32()
-        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
-        let data = r.subdata(in: offset..<(offset + Int(len)))
-        offset += Int(len)
-        return data
-    }
-    
-    let layer0Data = try readLayerData()
+    let len0 = try readUInt32BEFromBytes(r, offset: &offset)
+    let layer0Data = Array(r[offset..<(offset + Int(len0))])
+    offset += Int(len0)
     let layer0 = try await decodeBase(r: layer0Data, layer: 0, size: 8)
     
-    let layer1Data = try readLayerData()
+    let len1 = try readUInt32BEFromBytes(r, offset: &offset)
+    let layer1Data = Array(r[offset..<(offset + Int(len1))])
+    offset += Int(len1)
     let layer1 = try await decodeLayer(r: layer1Data, layer: 1, prev: layer0, size: 16)
     
-    let layer2Data = try readLayerData()
+    let len2 = try readUInt32BEFromBytes(r, offset: &offset)
+    let layer2Data = Array(r[offset..<(offset + Int(len2))])
+    offset += Int(len2)
     let layer2 = try await decodeLayer(r: layer2Data, layer: 2, prev: layer1, size: 32)
     
     return (layer0.toYCbCr(), layer1.toYCbCr(), layer2.toYCbCr())
 }
 
-public func decodeLayer0(r: Data) async throws -> YCbCrImage {
+public func decodeLayer0(r: [UInt8]) async throws -> YCbCrImage {
     var offset = 0
     
-    func readUInt32() throws -> UInt32 {
-        guard (offset + 4) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-        offset += 4
-        return val
-    }
-    
-    func readLayerData() throws -> Data {
-        let len = try readUInt32()
-        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
-        let data = r.subdata(in: offset..<(offset + Int(len)))
-        offset += Int(len)
-        return data
-    }
-    
-    let layer0Data = try readLayerData()
+    let len0 = try readUInt32BEFromBytes(r, offset: &offset)
+    let layer0Data = Array(r[offset..<(offset + Int(len0))])
+    offset += Int(len0)
     let layer0 = try await decodeBase(r: layer0Data, layer: 0, size: 8)
     
     return layer0.toYCbCr()
 }
 
-public func decodeLayers(data: Data...) async throws -> YCbCrImage {
-    guard let base = data.first else {
-        throw NSError(domain: "DecodeError", code: 3, userInfo: [NSLocalizedDescriptionKey: "No data provided"])
+public func decodeLayers(layers: [UInt8]...) async throws -> YCbCrImage {
+    guard let base = layers.first else {
+        throw DecodeError.noDataProvided
     }
     
     var current = try await decodeBase(r: base, layer: 0, size: 8)
     var currentSize = 16
 
-    for i in 1..<data.count {
-        current = try await decodeLayer(r: data[i], layer: UInt8(i), prev: current, size: currentSize)
+    for i in 1..<layers.count {
+        current = try await decodeLayer(r: layers[i], layer: UInt8(i), prev: current, size: currentSize)
         currentSize *= 2
     }
     
     return current.toYCbCr()
 }
 
-public func decodeOne(r: Data) async throws -> YCbCrImage {
+public func decodeOne(r: [UInt8]) async throws -> YCbCrImage {
     var offset = 0
     
-    func readUInt32() throws -> UInt32 {
-        guard (offset + 4) <= r.count else { throw NSError(domain: "DecodeError", code: 1, userInfo: nil) }
-        let val = r.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-        offset += 4
-        return val
-    }
-
-    func readLayerData() throws -> Data {
-        let len = try readUInt32()
-        guard (offset + Int(len)) <= r.count else { throw NSError(domain: "DecodeError", code: 2, userInfo: nil) }
-        let data = r.subdata(in: offset..<(offset + Int(len)))
-        offset += Int(len)
-        return data
-    }
-    
-    let layerOneData = try readLayerData()
+    let len = try readUInt32BEFromBytes(r, offset: &offset)
+    let layerOneData = Array(r[offset..<(offset + Int(len))])
+    offset += Int(len)
     let layerOne = try await decodeBase(r: layerOneData, layer: 0, size: 32)
     
     return layerOne.toYCbCr()

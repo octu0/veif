@@ -67,8 +67,8 @@ guard let ycbcr = try? pngToYCbCr(data: data) else {
 if profileMode {
     print("Profile mode: running 5000 iterations...")
     for _ in 0..<5000 {
-        let out = try! await encode(img: ycbcr, maxbitrate: (bitrate * 1000))
-        _ = try! await decode(r: out)
+        let out = try! await encodeImage(img: ycbcr, maxbitrate: (bitrate * 1000))
+        _ = try! await decodeImage(r: out)
     }
     print("Done.")
     exit(0)
@@ -81,20 +81,20 @@ print(String(format: "target %d bit = %3.2f%%", maxbit, ((Double(maxbit) / Doubl
 
 let startTime = Date()
 // Ensure encode exists in veif and is accessible
-guard let out = try? await encode(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
+guard let out = try? await encodeImage(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
     print("Failed to encode")
     exit(1)
 }
 let elapsed = Date().timeIntervalSince(startTime)
 
 let startTimeOne = Date()
-guard let outOne = try? await encodeOne(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
+guard let outOne = try? await encodeImageOne(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
     print("Failed to encode")
     exit(1)
 }
 let elapsedOne = Date().timeIntervalSince(startTimeOne)
 
-guard let (encoded0, encoded1, encoded2) = try? await encodeLayers(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
+guard let (encoded0, encoded1, encoded2) = try? await encodeImageLayers(img: ycbcr, maxbitrate: (bitrate * 1000)) else {
     print("Failed to encode")
     exit(1)
 }
@@ -141,17 +141,17 @@ print(String(
     ((Double(totalSizeOne) / Double(originalSize)) * 100)
 ))
 
-guard let (layer0, layer1, layer2) = try? await decode(r: out) else {
+guard let (layer0, layer1, layer2) = try? await decodeImage(r: out) else {
     print("Failed to decode")
     exit(1)
 }
 
-guard let layerOne = try? await decodeOne(r: outOne) else {
+guard let layerOne = try? await decodeImageOne(r: outOne) else {
     print("Failed to decode")
     exit(1)
 }
 
-guard let layers = try? await decodeLayers(data:encoded0, encoded1, encoded2) else {
+guard let layers = try? await decodeImageLayers(data:encoded0, encoded1, encoded2) else {
     print("Failed to decode")
     exit(1)
 }

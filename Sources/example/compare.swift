@@ -251,8 +251,8 @@ func runVeifSinglePoint(bitrate: Int, originImg: YCbCrImage) async -> (Double, D
     let targetBits = (bitrate * 1000)
     
     // 1. Warmup & Base Encode
-    guard let out = try? await encodeOne(img: originImg, maxbitrate: targetBits) else { return nil }
-    guard let dec = try? await decodeOne(r: out) else { return nil }
+    guard let out = try? await encodeImageOne(img: originImg, maxbitrate: targetBits) else { return nil }
+    guard let dec = try? await decodeImageOne(r: out) else { return nil }
     
     let metrics = calcMetrics(ref: originImg, target: dec)
     let sizeKB = (Double(out.count) / 1024.0)
@@ -263,7 +263,7 @@ func runVeifSinglePoint(bitrate: Int, originImg: YCbCrImage) async -> (Double, D
     var encTimes: [Double] = []
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await encodeOne(img: originImg, maxbitrate: targetBits)
+        _ = try? await encodeImageOne(img: originImg, maxbitrate: targetBits)
         let dur = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
         encTimes.append(dur)
     }
@@ -273,7 +273,7 @@ func runVeifSinglePoint(bitrate: Int, originImg: YCbCrImage) async -> (Double, D
     var decTimes: [Double] = []
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await decodeOne(r: out)
+        _ = try? await decodeImageOne(r: out)
         let dur = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
         decTimes.append(dur)
     }
@@ -931,11 +931,11 @@ func runVeifThumbnailSinglePoint(bitrate: Int, originImg: YCbCrImage) async -> (
     
     // 1. Encode Full (Standard) to get Multi-Resolution binary
     // Use `encode` (not encodeOne)
-    guard let out = try? await encode(img: originImg, maxbitrate: targetBits) else { return nil }
+    guard let out = try? await encodeImage(img: originImg, maxbitrate: targetBits) else { return nil }
     
     // 2. Thumbnail Metrics (Layer0)
     // Decode only Layer0 to check metrics
-    guard let (l0, _, _) = try? await decode(r: out) else { return nil }
+    guard let (l0, _, _) = try? await decodeImage(r: out) else { return nil }
     
     let layer0Size = getLayer0Size(data: out)
     let thumbSizeKB = (Double(layer0Size) / 1024.0)
@@ -953,14 +953,14 @@ func runVeifThumbnailSinglePoint(bitrate: Int, originImg: YCbCrImage) async -> (
     
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await encode(img: originImg, maxbitrate: targetBits)
+        _ = try? await encodeImage(img: originImg, maxbitrate: targetBits)
         encTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1000.0)
     }
     
     var thumbDecTimes: [Double] = []
     for _ in 0..<iterations {
         let start = CFAbsoluteTimeGetCurrent()
-        _ = try? await decodeLayer0(r: out)
+        _ = try? await decodeImageLayer0(r: out)
         thumbDecTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1000.0)
     }
     

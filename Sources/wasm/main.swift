@@ -22,8 +22,8 @@ func encodeVeif(data: JSTypedArray<UInt8>, width: Int, height: Int, bitrate: Int
 
 @JS
 func decodeVeif(data: JSTypedArray<UInt8>) async throws -> JSObject {
-    let localData = data.withUnsafeBytes { ptr in
-        Data(buffer: ptr)
+    let localData: [UInt8] = data.withUnsafeBytes { ptr in
+        Array(ptr)
     }
     
     let img = try await veif.decodeOne(r: localData)
