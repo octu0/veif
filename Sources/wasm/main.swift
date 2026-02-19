@@ -1,40 +1,62 @@
 import JavaScriptKit
+import JavaScriptEventLoop
 import veif
 
+JavaScriptEventLoop.installGlobalExecutor()
+
 @JS
-func encodeVeif(data: JSTypedArray<UInt8>, width: Int, height: Int, bitrate: Int) async throws -> JSTypedArray<UInt8> {
-    let localData: [UInt8] = data.withUnsafeBytes { ptr in
-        Array(ptr)
-    }
-    
-    let ycbcr = rgbaToYCbCr(data: localData, width: width, height: height)
-    let out = try await veif.encodeOne(img: ycbcr, maxbitrate: bitrate)
-    
-    return out.withUnsafeBytes { buf in
-        JSTypedArray<UInt8>(buffer: buf.bindMemory(to: UInt8.self))
-    }
+func encodeVeif(data: JSObject, width: Int, height: Int, bitrate: Int) -> JSObject {
+    return JSPromise.async { () async throws(JSException) -> JSValue in
+        let typedArray = JSTypedArray<UInt8>(unsafelyWrapping: data)
+        let localData: [UInt8] = typedArray.withUnsafeBytes { ptr in
+            Array(ptr)
+        }
+        
+        let ycbcr = rgbaToYCbCr(data: localData, width: width, height: height)
+        let out: [UInt8]
+        do {
+            out = try await veif.encodeOne(img: ycbcr, maxbitrate: bitrate)
+        } catch {
+            throw JSException(message: String(describing: error))
+        }
+        
+        let result = out.withUnsafeBytes { buf in
+            JSTypedArray<UInt8>(buffer: buf.bindMemory(to: UInt8.self))
+        }
+        return result.jsValue
+    }.jsObject
 }
 
 @JS
-func decodeVeif(data: JSTypedArray<UInt8>) async throws -> JSObject {
-    let localData: [UInt8] = data.withUnsafeBytes { ptr in
-        Array(ptr)
-    }
-    
-    let img = try await veif.decodeOne(r: localData)
-    let rgba = ycbcrToRGBA(img: img)
-    
-    let jsArr = rgba.withUnsafeBytes { buf in
-        JSTypedArray<UInt8>(buffer: buf.bindMemory(to: UInt8.self))
-    }
-    
-    let resultObj = JSObject.global.Object.function!.new()
-    resultObj.data = jsArr.jsValue
-    resultObj.width = .number(Double(img.width))
-    resultObj.height = .number(Double(img.height))
-    
-    return resultObj
+func decodeVeif(data: JSObject) -> JSObject {
+    return JSPromise.async { () async throws(JSException) -> JSValue in
+        let typedArray = JSTypedArray<UInt8>(unsafelyWrapping: data)
+        let localData: [UInt8] = typedArray.withUnsafeBytes { ptr in
+            Array(ptr)
+        }
+        
+        let img: YCbCrImage
+        do {
+            img = try await veif.decodeOne(r: localData)
+        } catch {
+            throw JSException(message: String(describing: error))
+        }
+        let rgba = ycbcrToRGBA(img: img)
+        
+        let jsArr = rgba.withUnsafeBytes { buf in
+            JSTypedArray<UInt8>(buffer: buf.bindMemory(to: UInt8.self))
+        }
+        
+        let resultObj = JSObject.global.Object.function!.new()
+        resultObj.data = jsArr.jsValue
+        resultObj.width = .number(Double(img.width))
+        resultObj.height = .number(Double(img.height))
+        
+        return resultObj.jsValue
+    }.jsObject
 }
+
+
 
 func rgbaToYCbCr(data: [UInt8], width: Int, height: Int) -> YCbCrImage {
     var ycbcr = YCbCrImage(width: width, height: height, ratio: .ratio444)
