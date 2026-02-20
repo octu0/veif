@@ -3,6 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "veif",
+    platforms: [
+        .macOS(.v14)
+    ],
     products: [
         .library(name: "veif", targets: ["veif"]),
         .executable(name: "wasm", targets: ["wasm"]),
@@ -14,6 +17,9 @@ let package = Package(
         .target(
             name: "veif",
             dependencies: [],
+            swiftSettings: [
+                .unsafeFlags(["-Xcc", "-msimd128"], .when(platforms: [.wasi]))
+            ]
         ),
         .executableTarget(
             name: "example",
@@ -28,7 +34,8 @@ let package = Package(
                 .product(name: "JavaScriptEventLoop", package: "JavaScriptKit")
             ],
             swiftSettings: [
-                .enableExperimentalFeature("Extern")
+                .enableExperimentalFeature("Extern"),
+                .unsafeFlags(["-Xcc", "-msimd128"], .when(platforms: [.wasi]))
             ],
             plugins: [
                 .plugin(name: "BridgeJS", package: "JavaScriptKit")
