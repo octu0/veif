@@ -18,7 +18,7 @@ let package = Package(
             name: "veif",
             dependencies: [],
             swiftSettings: [
-                .unsafeFlags(["-Xcc", "-msimd128"], .when(platforms: [.wasi]))
+                .unsafeFlags(["-Ounchecked", "-wmo", "-Xcc", "-msimd128"], .when(platforms: [.wasi]))
             ]
         ),
         .executableTarget(
@@ -35,7 +35,7 @@ let package = Package(
             ],
             swiftSettings: [
                 .enableExperimentalFeature("Extern"),
-                .unsafeFlags(["-Xcc", "-msimd128"], .when(platforms: [.wasi]))
+                .unsafeFlags(["-Ounchecked", "-wmo", "-Xcc", "-msimd128"], .when(platforms: [.wasi]))
             ],
             plugins: [
                 .plugin(name: "BridgeJS", package: "JavaScriptKit")
