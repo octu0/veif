@@ -5,11 +5,13 @@
 struct Quantizer: Sendable {
     public let step: Int16
     public let mul: Int32
+    public let bias: Int32
     public let shift: Int16 = 16
     
-    public init(step: Int) {
+    public init(step: Int, roundToNearest: Bool = false) {
         self.step = Int16(step)
         self.mul = Int32((1 << 16) / step)
+        self.bias = Int32(roundToNearest ? (1 << 15) : 0)
     }
 }
 
@@ -20,11 +22,11 @@ struct QuantizationTable: Sendable {
     public let qHigh: Quantizer
     
     public init(baseStep: Int) {
-        let s = max(1, baseStep)
+        let s = max(1, min(baseStep, 32767))
         self.step = Int16(s)
-        self.qLow  = Quantizer(step: s)
-        self.qMid  = Quantizer(step: s * 2)
-        self.qHigh = Quantizer(step: s * 4)
+        self.qLow  = Quantizer(step: s, roundToNearest: true)
+        self.qMid  = Quantizer(step: s * 2, roundToNearest: false)
+        self.qHigh = Quantizer(step: s * 4, roundToNearest: false)
     }
 }
 
@@ -81,7 +83,7 @@ internal func quantizeSignedMapping(_ block: inout BlockView, q: Quantizer) {
 #if arch(arm64) || arch(x86_64) || arch(wasm32)
 
 @inline(__always)
-private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32) -> SIMD8<Int16> {
+private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32, bias: Int32) -> SIMD8<Int16> {
     let zero = SIMD8<Int16>.zero
     let isNeg = vec .< zero
     let absVec = vec.replacing(with: 0 &- vec, where: isNeg)
@@ -95,9 +97,10 @@ private func performQuantizeSIMD8(_ vec: SIMD8<Int16>, mul: Int32, shift: Int32)
     
     let mulVec = SIMD4<Int32>(repeating: mul)
     let shiftVec = SIMD4<Int32>(repeating: shift)
+    let biasVec = SIMD4<Int32>(repeating: bias)
     
-    let resLow32 = (low32 &* mulVec) &>> shiftVec
-    let resHigh32 = (high32 &* mulVec) &>> shiftVec
+    let resLow32 = ((low32 &* mulVec) &+ biasVec) &>> shiftVec
+    let resHigh32 = ((high32 &* mulVec) &+ biasVec) &>> shiftVec
     
     let res = SIMD8<Int16>(
         Int16(resLow32[0]), Int16(resLow32[1]), Int16(resLow32[2]), Int16(resLow32[3]),
@@ -121,10 +124,11 @@ private func quantizeSIMD(_ block: inout BlockView, q: Quantizer) {
 private func quantizeSIMD8(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<8 {
         let ptr = block.rowPointer(y: y)
         let vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        let res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
     }
 }
@@ -133,15 +137,16 @@ private func quantizeSIMD8(_ block: inout BlockView, q: Quantizer) {
 private func quantizeSIMD16(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<16 {
         let ptr = block.rowPointer(y: y)
         // 0
         var vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
         // 8
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 8, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr + 8).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
     }
 }
@@ -150,23 +155,24 @@ private func quantizeSIMD16(_ block: inout BlockView, q: Quantizer) {
 private func quantizeSIMD32(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<32 {
         let ptr = block.rowPointer(y: y)
         // 0
         var vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
         // 8
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 8, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr + 8).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
         // 16
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 16, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr + 16).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
         // 24
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 24, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         UnsafeMutableRawPointer(ptr + 24).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = res
     }
 }
@@ -175,13 +181,14 @@ private func quantizeSIMD32(_ block: inout BlockView, q: Quantizer) {
 private func quantizeSIMDGeneric(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     
     for y in 0..<block.height {
         let ptr = block.rowPointer(y: y)
         var i = 0
         while (i + 8) <= block.width {
             let vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + i, count: 8))
-            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
             let rawPtr = UnsafeMutableRawPointer(ptr + i).assumingMemoryBound(to: SIMD8<Int16>.self)
             rawPtr.pointee = res
             i += 8
@@ -189,7 +196,7 @@ private func quantizeSIMDGeneric(_ block: inout BlockView, q: Quantizer) {
         while i < block.width {
             let val = Int32(ptr[i])
             let absVal = abs(val)
-            let qVal = (absVal &* mul) &>> shift
+            let qVal = ((absVal &* mul) &+ bias) &>> shift
             ptr[i] = Int16(val < 0 ? -qVal : qVal)
             i += 1
         }
@@ -210,10 +217,11 @@ private func quantizeSIMDSignedMapping(_ block: inout BlockView, q: Quantizer) {
 private func quantizeSIMDSignedMapping8(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<8 {
         let ptr = block.rowPointer(y: y)
         let vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        let res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         let mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
     }
@@ -223,16 +231,17 @@ private func quantizeSIMDSignedMapping8(_ block: inout BlockView, q: Quantizer) 
 private func quantizeSIMDSignedMapping16(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<16 {
         let ptr = block.rowPointer(y: y)
         // 0
         var vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         var mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
         // 8
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 8, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr + 8).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
     }
@@ -242,26 +251,27 @@ private func quantizeSIMDSignedMapping16(_ block: inout BlockView, q: Quantizer)
 private func quantizeSIMDSignedMapping32(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for y in 0..<32 {
         let ptr = block.rowPointer(y: y)
         // 0
         var vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr, count: 8))
-        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        var res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         var mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
         // 8
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 8, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr + 8).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
         // 16
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 16, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr + 16).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
         // 24
         vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + 24, count: 8))
-        res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+        res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
         mask = (res &<< 1) ^ (res &>> 15)
         UnsafeMutableRawPointer(ptr + 24).assumingMemoryBound(to: SIMD8<Int16>.self).pointee = mask
     }
@@ -271,13 +281,14 @@ private func quantizeSIMDSignedMapping32(_ block: inout BlockView, q: Quantizer)
 private func quantizeSIMDSignedMappingGeneric(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     
     for y in 0..<block.height {
         let ptr = block.rowPointer(y: y)
         var i = 0
         while (i + 8) <= block.width {
             let vec = SIMD8<Int16>(UnsafeBufferPointer(start: ptr + i, count: 8))
-            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift)
+            let res = performQuantizeSIMD8(vec, mul: mul, shift: shift, bias: bias)
             let mask = (res &<< 1) ^ (res &>> 15)
             let rawPtr = UnsafeMutableRawPointer(ptr + i).assumingMemoryBound(to: SIMD8<Int16>.self)
             rawPtr.pointee = mask
@@ -286,7 +297,7 @@ private func quantizeSIMDSignedMappingGeneric(_ block: inout BlockView, q: Quant
         while i < block.width {
             let val = Int32(ptr[i])
             let absVal = abs(val)
-            let qVal = (absVal &* mul) &>> shift
+            let qVal = ((absVal &* mul) &+ bias) &>> shift
             let v = Int16(val < 0 ? -qVal : qVal)
             ptr[i] = Int16(bitPattern: UInt16(bitPattern: (v &<< 1) ^ (v >> 15)))
             i += 1
@@ -302,13 +313,14 @@ private func quantizeSIMDSignedMappingGeneric(_ block: inout BlockView, q: Quant
 internal func quantizeScalar(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     
     for y in 0..<block.height {
         let ptr = block.rowPointer(y: y)
         for x in 0..<block.width {
             let val = Int32(ptr[x])
             let absVal = abs(val)
-            let qVal = (absVal &* mul) &>> shift
+            let qVal = ((absVal &* mul) &+ bias) &>> shift
             ptr[x] = Int16(val < 0 ? -qVal : qVal)
         }
     }
@@ -318,13 +330,14 @@ internal func quantizeScalar(_ block: inout BlockView, q: Quantizer) {
 internal func quantizeScalarSignedMapping(_ block: inout BlockView, q: Quantizer) {
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     
     for y in 0..<block.height {
         let ptr = block.rowPointer(y: y)
         for x in 0..<block.width {
             let val = Int32(ptr[x])
             let absVal = abs(val)
-            let qVal = (absVal &* mul) &>> shift
+            let qVal = ((absVal &* mul) &+ bias) &>> shift
             let v = Int16(val < 0 ? -qVal : qVal)
             ptr[x] = Int16(bitPattern: UInt16(bitPattern: (v &<< 1) ^ (v >> 15)))
         }
