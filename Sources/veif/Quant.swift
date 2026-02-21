@@ -1,7 +1,5 @@
 // MARK: - Quantization
 
-// MARK: - Quantization
-
 struct Quantizer: Sendable {
     public let step: Int16
     public let mul: Int32

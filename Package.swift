@@ -50,6 +50,17 @@ if isWasmBuild {
             ]
         )
     )
+    packageTargets.append(
+        .testTarget(
+            name: "wasmTests",
+            dependencies: [
+                "veif",
+                "wasm"
+            ],
+            swiftSettings: [],
+            plugins: []
+        )
+    )
 }
 
 let package = Package(

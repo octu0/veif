@@ -210,6 +210,34 @@ compare
 $ swift run -c release example -compare ./docs/color.png /path/to/output/dir
 ```
 
+# BUILD & test
+
+build:
+
+```bash
+$ make build
+```
+
+test:
+
+```bash
+$ swift test --filter veifTests
+```
+
+## for wasm
+
+build:
+
+```bash
+$ make wasm
+```
+
+test:
+
+```bash
+$ WASM_BUILD=1 swift test --filter wasmTests
+```
+
 ## License
 
 MIT
