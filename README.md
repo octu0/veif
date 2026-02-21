@@ -192,11 +192,19 @@ let decodedLayers = try await decodeImageLayers(data: encodedLayer0, encodedLaye
 
 ## CLI Usage
 
-encode/decode
+encode (save 3 layers)
 
 ```bash
-$ swift run -c release example -bitrate 100 ./docs/src.png /path/to/output/dir
+$ swift run -c release veif-enc -bitrate 100 src.png /output/dir
 ```
+
+decode (output 3 layers)
+
+```bash
+$ swift run -c release veif-dec src.veif /output/dir
+```
+
+## other tool
 
 benchmark
 

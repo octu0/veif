@@ -8,7 +8,9 @@ var packageProducts: [Product] = [
     .library(name: "veif", targets: ["veif"]),
 ]
 
-var packageDeps: [Package.Dependency] = []
+var packageDeps: [Package.Dependency] = [
+    .package(url: "https://github.com/tayloraswift/swift-png", from: "4.4.9")
+]
 
 var packageTargets: [Target] = [
     .target(
@@ -27,6 +29,20 @@ var packageTargets: [Target] = [
         name: "veifTests",
         dependencies: ["veif"]
     ),
+    .executableTarget(
+        name: "veif-enc",
+        dependencies: [
+            "veif",
+            .product(name: "PNG", package: "swift-png")
+        ]
+    ),
+    .executableTarget(
+        name: "veif-dec",
+        dependencies: [
+            "veif",
+            .product(name: "PNG", package: "swift-png")
+        ]
+    )
 ]
 
 if isWasmBuild {
@@ -50,6 +66,7 @@ if isWasmBuild {
             ]
         )
     )
+    /*
     packageTargets.append(
         .testTarget(
             name: "wasmTests",
@@ -61,6 +78,7 @@ if isWasmBuild {
             plugins: []
         )
     )
+    */
 }
 
 let package = Package(

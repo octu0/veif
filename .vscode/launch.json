@@ -39,6 +39,46 @@
             "target": "wasm",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release wasm"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Debug veif-enc",
+            "target": "veif-enc",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug veif-enc"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Release veif-enc",
+            "target": "veif-enc",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release veif-enc"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Debug veif-dec",
+            "target": "veif-dec",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug veif-dec"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:veif}",
+            "name": "Release veif-dec",
+            "target": "veif-dec",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release veif-dec"
         }
     ]
 }

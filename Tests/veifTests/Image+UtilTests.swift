@@ -1,8 +1,8 @@
 import Testing
-@testable import wasm
+@testable import veif
 
-@Suite("wasm/Image Tests")
-struct ImageTests {
+@Suite("veif/ImageUtil Tests")
+struct ImageUtilTests {
     
     @Test("rgbaToYCbCr Roundtrip: size=4")
     func rgbaToYCbCrRoundtrip() {

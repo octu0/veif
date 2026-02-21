@@ -35,7 +35,7 @@ func encodeOne(data: JSValue, width: Int, height: Int, bitrate: Int, onSuccess: 
     let callbacks = Callbacks(onSuccess: onSuccess, onError: onError)
     
     Task {
-        let ycbcr = rgbaToYCbCr(data: localData, width: width, height: height)
+        let ycbcr = veif.rgbaToYCbCr(data: localData, width: width, height: height)
         let out: [UInt8]
         do {
             out = try await veif.encodeOne(img: ycbcr, maxbitrate: bitrate)
@@ -76,7 +76,7 @@ func decodeOne(data: JSValue, onSuccess: JSObject, onError: JSObject) {
             _ = callbacks.onError.callAsFunction(String(describing: error))
             return
         }
-        let rgba = ycbcrToRGBA(img: img)
+        let rgba = veif.ycbcrToRGBA(img: img)
         _ = callbacks.onSuccess.callAsFunction(makeImageObject(width: img.width, height: img.height, data: rgba))
     }
 }
@@ -99,7 +99,7 @@ func encode(data: JSValue, width: Int, height: Int, bitrate: Int, onSuccess: JSO
     let callbacks = Callbacks(onSuccess: onSuccess, onError: onError)
     
     Task {
-        let ycbcr = rgbaToYCbCr(data: localData, width: width, height: height)
+        let ycbcr = veif.rgbaToYCbCr(data: localData, width: width, height: height)
         let out: [UInt8]
         do {
             out = try await veif.encode(img: ycbcr, maxbitrate: bitrate)
@@ -180,7 +180,7 @@ func decodeUpTo(data: JSValue, maxLayer: Int, onSuccess: JSObject, onError: JSOb
             _ = callbacks.onError.callAsFunction(String(describing: error))
             return
         }
-        let rgba = ycbcrToRGBA(img: img)
+        let rgba = veif.ycbcrToRGBA(img: img)
         _ = callbacks.onSuccess.callAsFunction(makeImageObject(width: img.width, height: img.height, data: rgba))
     }
 }

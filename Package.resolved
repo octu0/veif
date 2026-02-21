@@ -1,22 +1,22 @@
 {
-  "originHash" : "c9de8ff84c9d81b0bcea84651acf3bf52ffe70e4205e47e3b19562ad2a233f45",
+  "originHash" : "dec08847bf0cc221f83b0413af77f05a4b79974a514a2e1944e4028bc0b91afa",
   "pins" : [
     {
-      "identity" : "javascriptkit",
+      "identity" : "swift-hash",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftwasm/JavaScriptKit",
+      "location" : "https://github.com/tayloraswift/swift-hash",
       "state" : {
-        "revision" : "79bda2e399be0ac88d9173998d7b6412b7ffe54e",
-        "version" : "0.45.0"
+        "revision" : "ea0b9fc3152ed5941dd82e4a01e65f99fe1a75d2",
+        "version" : "0.7.1"
       }
     },
     {
-      "identity" : "swift-syntax",
+      "identity" : "swift-png",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftlang/swift-syntax",
+      "location" : "https://github.com/tayloraswift/swift-png",
       "state" : {
-        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
-        "version" : "602.0.0"
+        "revision" : "d444d98aa32f022bf4a8e74b5a697c7ee856a6ad",
+        "version" : "4.4.9"
       }
     }
   ],

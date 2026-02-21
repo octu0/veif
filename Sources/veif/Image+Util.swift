@@ -1,7 +1,5 @@
-import veif
-
 @inline(__always)
-func rgbaToYCbCr(data: [UInt8], width: Int, height: Int) -> YCbCrImage {
+public func rgbaToYCbCr(data: [UInt8], width: Int, height: Int) -> YCbCrImage {
     var ycbcr = YCbCrImage(width: width, height: height, ratio: .ratio444)
     
     data.withUnsafeBufferPointer { dataPtr in
@@ -36,7 +34,7 @@ func rgbaToYCbCr(data: [UInt8], width: Int, height: Int) -> YCbCrImage {
 }
 
 @inline(__always)
-func ycbcrToRGBA(img: YCbCrImage) -> [UInt8] {
+public func ycbcrToRGBA(img: YCbCrImage) -> [UInt8] {
     let width = img.width
     let height = img.height
     let totalPixels = width * height
