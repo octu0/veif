@@ -7,10 +7,11 @@ private func referenceQuantize(_ data: inout Block2D, size: Int, q: Quantizer) {
     let total = (size * size)
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for i in 0..<total {
         let val = Int32(data.data[i])
         let absVal = abs(val)
-        let qVal = (absVal &* mul) &>> shift
+        let qVal = ((absVal &* mul) &+ bias) &>> shift
         data.data[i] = Int16(val < 0 ? -1 * qVal : qVal)
     }
 }
@@ -19,10 +20,11 @@ private func referenceQuantizeSignedMapping(_ data: inout Block2D, size: Int, q:
     let total = (size * size)
     let mul = q.mul
     let shift = Int32(q.shift)
+    let bias = q.bias
     for i in 0..<total {
         let val = Int32(data.data[i])
         let absVal = abs(val)
-        let qVal = (absVal &* mul) &>> shift
+        let qVal = ((absVal &* mul) &+ bias) &>> shift
         let v = Int16(val < 0 ? -1 * qVal : qVal)
         
         let u = UInt16(bitPattern: (v &<< 1) ^ (v >> 15))
