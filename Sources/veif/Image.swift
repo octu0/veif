@@ -220,7 +220,7 @@ public struct ImageReader: Sendable {
                  guard let srcBase = srcPtr.baseAddress else { return }
                  let rowStart = srcBase.advanced(by: offset)
                  for i in 0..<size {
-                     plane[i] = Int16(rowStart[i])
+                     plane[i] = Int16(rowStart[i]) - 128
                  }
              }
              return plane
@@ -234,7 +234,7 @@ public struct ImageReader: Sendable {
                 for i in 0..<size {
                     let (px, py) = boundaryRepeat(width, height, (x + i), y)
                     let offset = img.yOffset(px, py)
-                    destBase[i] = Int16(srcBase[offset])
+                    destBase[i] = Int16(srcBase[offset]) - 128
                 }
             }
         }
@@ -250,7 +250,7 @@ public struct ImageReader: Sendable {
             let cPx = rPx
             let cPy = rPy
             let offset = img.cOffset(cPx, cPy)
-            plane[i] = Int16(img.cbPlane[offset])
+            plane[i] = Int16(img.cbPlane[offset]) - 128
         }
         return plane
     }
@@ -269,7 +269,7 @@ public struct ImageReader: Sendable {
                     let cPx = (rPx / 2)
                     let cPy = (rPy / 2)
                     let offset = img.cOffset(cPx, cPy)
-                    destBase[i] = Int16(srcBase[offset])
+                    destBase[i] = Int16(srcBase[offset]) - 128
                 }
             }
         }
@@ -293,7 +293,7 @@ public struct ImageReader: Sendable {
             let cPx = rPx
             let cPy = rPy
             let offset = img.cOffset(cPx, cPy)
-            plane[i] = Int16(img.crPlane[offset])
+            plane[i] = Int16(img.crPlane[offset]) - 128
         }
         return plane
     }
@@ -312,7 +312,7 @@ public struct ImageReader: Sendable {
                     let cPx = (rPx / 2)
                     let cPy = (rPy / 2)
                     let offset = img.cOffset(cPx, cPy)
-                    destBase[i] = Int16(srcBase[offset])
+                    destBase[i] = Int16(srcBase[offset]) - 128
                 }
             }
         }
@@ -494,7 +494,7 @@ public struct Image16: Sendable {
                     let destRowStart = destBase.advanced(by: destOffset)
                     
                     for i in 0..<width {
-                        destRowStart[i] = clampU8(srcBase[i])
+                        destRowStart[i] = clampU8(srcBase[i] + 128)
                     }
                 }
             }
@@ -521,8 +521,8 @@ public struct Image16: Sendable {
                             let destCrRowStart = destCrBase.advanced(by: destOffset)
                             
                             for i in 0..<halfWidth {
-                                destCbRowStart[i] = clampU8(cbBase[i])
-                                destCrRowStart[i] = clampU8(crBase[i])
+                                destCbRowStart[i] = clampU8(cbBase[i] + 128)
+                                destCrRowStart[i] = clampU8(crBase[i] + 128)
                             }
                         }
                     }

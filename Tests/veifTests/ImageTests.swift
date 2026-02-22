@@ -114,10 +114,10 @@ final class ImageTests: XCTestCase {
         XCTAssertEqual(ycbcr.height, 4)
         
         // Check Y
-        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(0, 0)], 100)
-        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(1, 0)], 255)
-        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(2, 0)], 0)
-        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(3, 0)], 128)
+        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(0, 0)], 228) // clampU8(100+128)
+        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(1, 0)], 255) // clampU8(300+128)
+        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(2, 0)], 78) // clampU8(-50+128)
+        XCTAssertEqual(ycbcr.yPlane[ycbcr.yOffset(3, 0)], 255) // clampU8(128+128)
         
         // Check Cb
         // 4:2:0 subsampling by default in Image16? 
@@ -125,10 +125,10 @@ final class ImageTests: XCTestCase {
         // Cb size in YCbCrImage for 4x4 image is 2x2.
         // indices: (0,0), (1,0), (0,1), (1,1)
         
-        XCTAssertEqual(ycbcr.cbPlane[ycbcr.cOffset(0, 0)], 50)
-        XCTAssertEqual(ycbcr.cbPlane[ycbcr.cOffset(1, 0)], 200)
+        XCTAssertEqual(ycbcr.cbPlane[ycbcr.cOffset(0, 0)], 178) // clampU8(50+128)
+        XCTAssertEqual(ycbcr.cbPlane[ycbcr.cOffset(1, 0)], 255) // clampU8(200+128)
         
-        XCTAssertEqual(ycbcr.crPlane[ycbcr.cOffset(1, 0)], 255)
+        XCTAssertEqual(ycbcr.crPlane[ycbcr.cOffset(1, 0)], 255) // clampU8(260+128)
     }
 
     func testRowY() {
@@ -149,13 +149,13 @@ final class ImageTests: XCTestCase {
         // Test rowY normal (x=0, y=0, size=8)
         let row0 = reader.rowY(x: 0, y: 0, size: 8)
         XCTAssertEqual(row0.count, 8)
-        XCTAssertEqual(row0[0], 0)
-        XCTAssertEqual(row0[7], 7)
+        XCTAssertEqual(row0[0], 0 - 128)
+        XCTAssertEqual(row0[7], 7 - 128)
                
         // Test rowY offset (x=2, y=2, size=4)
         let row2 = reader.rowY(x: 2, y: 2, size: 4)
-        XCTAssertEqual(row2[0], 22) // 2*10+2
-        XCTAssertEqual(row2[3], 25) // 2*10+5
+        XCTAssertEqual(row2[0], 22 - 128) // 2*10+2 - 128
+        XCTAssertEqual(row2[3], 25 - 128) // 2*10+5 - 128
         
         // Test rowY boundary
         // x=6, size=4. Width 8.
@@ -164,9 +164,9 @@ final class ImageTests: XCTestCase {
         // i=2 -> x=8 -> boundaryRepeat -> x=7 -> val=7
         // i=3 -> x=9 -> boundaryRepeat -> x=6 -> val=6
         let rowBoundary = reader.rowY(x: 6, y: 0, size: 4)
-        XCTAssertEqual(rowBoundary[0], 6)
-        XCTAssertEqual(rowBoundary[1], 7)
-        XCTAssertEqual(rowBoundary[2], 7)
-        XCTAssertEqual(rowBoundary[3], 6)
+        XCTAssertEqual(rowBoundary[0], 6 - 128)
+        XCTAssertEqual(rowBoundary[1], 7 - 128)
+        XCTAssertEqual(rowBoundary[2], 7 - 128)
+        XCTAssertEqual(rowBoundary[3], 6 - 128)
     }
 }
