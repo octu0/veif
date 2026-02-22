@@ -190,6 +190,22 @@ let decodedLayers = try await decodeImageLayers(data: encodedLayer0, encodedLaye
   - Unsafe buffer pointers are used throughout the pipeline (ImageReader, DWT, Quantization) to minimize ARC overhead and bounds checking.
   - Object Pooling & Instance Reuse.
 
+## Why Swift?
+
+I strongly prefer explicit processing over implicit "magic." I want to see exactly what the code is doing under the hood.
+
+I have built many products in [Go](https://go.dev/). Go is a fantastic language that lets you focus on algorithms, and it is incredibly fast in most scenarios. However, when it comes to writing SIMD instructions, Go essentially relies on C wrappers (cgo) or raw assembly, which feels no different than just writing C. I felt the same way about [Rust](https://www.rust-lang.org/); maintaining the structural integrity of an algorithm while writing SIMD instructions is incredibly important to me.
+
+Algorithms and data structures are inextricably linked. Because of this, I initially reached for [Halide](https://halide-lang.org/), a tool I have chosen for many image and audio processing tasks in the past. While Halide's performance is excellent, its drawback for me was that the connection between the algorithm and the data structure was not explicit enough.
+
+Next, I tried [Zig](https://ziglang.org/) for its high expressiveness. It was great at first, but I encountered situations where my code would no longer build after a version update. Language stability is critical. Code that breaks simply because the compiler version goes up severely lacks maintainability.
+
+In contrast, Swift allows you to write SIMD code that stays completely true to your data structures. In fact, I originally wrote reference implementations for this project in Go and Halide, but rewriting it in Swift allowed me to establish the best of both worlds: algorithmic explicitness and top-tier performance.
+
+While Swift is a highly modern language, it is entirely possible to write explicit, transparent code as long as you consciously avoid relying on its implicit behaviors. Furthermore, with rigorous tuning, I was able to achieve the same level of execution speed that I previously got from Halide.
+
+Therefore, I chose Swift for this project because it currently offers the highest maintainability while realistically delivering the maximum possible performance.
+
 ## CLI Usage
 
 encode (save 3 layers)
