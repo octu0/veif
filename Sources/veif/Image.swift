@@ -339,8 +339,8 @@ public struct Image16: Sendable {
         self.width = width
         self.height = height
         self.y = [[Int16]](repeating: [Int16](repeating: 0, count: width), count: height)
-        self.cb = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
-        self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: (width / 2)), count: (height / 2))
+        self.cb = [[Int16]](repeating: [Int16](repeating: 0, count: ((width + 1) / 2)), count: ((height + 1) / 2))
+        self.cr = [[Int16]](repeating: [Int16](repeating: 0, count: ((width + 1) / 2)), count: ((height + 1) / 2))
     }
     
     @inline(__always)
@@ -363,7 +363,7 @@ public struct Image16: Sendable {
         block.withView { v in
             for h in 0..<size {
                 for w in 0..<size {
-                    let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                    let (px, py) = boundaryRepeat(((width + 1) / 2), ((height + 1) / 2), (x + w), (y + h))
                     v[h, w] = self.cb[py][px]
                 }
             }
@@ -377,7 +377,7 @@ public struct Image16: Sendable {
         block.withView { v in
             for h in 0..<size {
                 for w in 0..<size {
-                    let (px, py) = boundaryRepeat((width / 2), (height / 2), (x + w), (y + h))
+                    let (px, py) = boundaryRepeat(((width + 1) / 2), ((height + 1) / 2), (x + w), (y + h))
                     v[h, w] = self.cr[py][px]
                 }
             }
@@ -416,8 +416,8 @@ public struct Image16: Sendable {
     
     @inline(__always)
     public mutating func updateCb(data: inout Block2D, startX: Int, startY: Int, size: Int) {
-        let halfHeight = (height / 2)
-        let halfWidth = (width / 2)
+        let halfHeight = ((height + 1) / 2)
+        let halfWidth = ((width + 1) / 2)
         
         let validStartY = max(0, startY)
         let validStartX = max(0, startX)
@@ -448,8 +448,8 @@ public struct Image16: Sendable {
     
     @inline(__always)
     public mutating func updateCr(data: inout Block2D, startX: Int, startY: Int, size: Int) {
-        let halfHeight = (height / 2)
-        let halfWidth = (width / 2)
+        let halfHeight = ((height + 1) / 2)
+        let halfWidth = ((width + 1) / 2)
         
         let validStartY = max(0, startY)
         let validStartX = max(0, startX)
@@ -500,8 +500,8 @@ public struct Image16: Sendable {
             }
         }
         
-        let halfHeight = height / 2
-        let halfWidth = width / 2
+        let halfHeight = ((height + 1) / 2)
+        let halfWidth = ((width + 1) / 2)
         
         for y in 0..<halfHeight {
             let srcCbRow = self.cb[y]

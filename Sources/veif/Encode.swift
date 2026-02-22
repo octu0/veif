@@ -171,10 +171,10 @@ func encodeLayer(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable)
     
     // Cb
     try await withThrowingTaskGroup(of: (Int, [([UInt8], Block2D, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
             group.addTask {
                 var rowResults: [([UInt8], Block2D, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
+                for w in stride(from: 0, to: ((dx + 1) / 2), by: size) {
                     let (data, ll) = try transformLayerFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, ll, w, h))
                 }
@@ -199,10 +199,10 @@ func encodeLayer(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable)
     
     // Cr
     try await withThrowingTaskGroup(of: (Int, [([UInt8], Block2D, Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
             group.addTask {
                 var rowResults: [([UInt8], Block2D, Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
+                for w in stride(from: 0, to: ((dx + 1) / 2), by: size) {
                     let (data, ll) = try transformLayerFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, ll, w, h))
                 }
@@ -288,10 +288,10 @@ func encodeBase(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable) 
     
     // Cb
     try await withThrowingTaskGroup(of: (Int, [([UInt8], Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
             group.addTask {
                 var rowResults: [([UInt8], Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
+                for w in stride(from: 0, to: ((dx + 1) / 2), by: size) {
                     let data = try transformBaseFunc(rows: r.rowCb, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, w, h))
                 }
@@ -314,10 +314,10 @@ func encodeBase(r: ImageReader, layer: UInt8, size: Int, qt: QuantizationTable) 
     
     // Cr
     try await withThrowingTaskGroup(of: (Int, [([UInt8], Int, Int)]).self) { group in
-        for h in stride(from: 0, to: (dy / 2), by: size) {
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
             group.addTask {
                 var rowResults: [([UInt8], Int, Int)] = []
-                for w in stride(from: 0, to: (dx / 2), by: size) {
+                for w in stride(from: 0, to: ((dx + 1) / 2), by: size) {
                     let data = try transformBaseFunc(rows: r.rowCr, w: w, h: h, size: size, qt: qt)
                     rowResults.append((data, w, h))
                 }

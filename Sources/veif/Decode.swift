@@ -240,8 +240,8 @@ func decodeLayer(r: [UInt8], layer: UInt8, prev: Image16, size: Int) async throw
     // Cb
     try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
         var bufIndex = 0
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: ((dx + 1) / 2), by: size))
             let rowBufs = Array(cbBufs[bufIndex..<(bufIndex + wStride.count)])
             bufIndex += wStride.count
             
@@ -275,8 +275,8 @@ func decodeLayer(r: [UInt8], layer: UInt8, prev: Image16, size: Int) async throw
     // Cr
     try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
         var bufIndex = 0
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: ((dx + 1) / 2), by: size))
             let rowBufs = Array(crBufs[bufIndex..<(bufIndex + wStride.count)])
             bufIndex += wStride.count
             
@@ -386,8 +386,8 @@ func decodeBase(r: [UInt8], layer: UInt8, size: Int) async throws -> Image16 {
     // Cb
     try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
         var bufIndex = 0
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: ((dx + 1) / 2), by: size))
             let rowBufs = Array(cbBufs[bufIndex..<(bufIndex + wStride.count)])
             bufIndex += wStride.count
             
@@ -421,8 +421,8 @@ func decodeBase(r: [UInt8], layer: UInt8, size: Int) async throws -> Image16 {
     // Cr
     try await withThrowingTaskGroup(of: (Int, [(Block2D, Int, Int)]).self) { group in
         var bufIndex = 0
-        for h in stride(from: 0, to: (dy / 2), by: size) {
-            let wStride = Array(stride(from: 0, to: (dx / 2), by: size))
+        for h in stride(from: 0, to: ((dy + 1) / 2), by: size) {
+            let wStride = Array(stride(from: 0, to: ((dx + 1) / 2), by: size))
             let rowBufs = Array(crBufs[bufIndex..<(bufIndex + wStride.count)])
             bufIndex += wStride.count
             
